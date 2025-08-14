@@ -34,6 +34,7 @@ app = FastAPI(lifespan=lifespan)
 
 # --- Configuration ---
 SECRET_KEY = "Ea$yB1o"
+# ** THE FIX IS HERE: Changed "HS26" to "HS256" **
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 REFRESH_TOKEN_EXPIRE_DAYS = 7
