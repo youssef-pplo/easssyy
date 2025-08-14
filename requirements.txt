@@ -7,4 +7,4 @@ requests
 pydantic
 bcrypt==4.0.1
 libsql-client
-sqldialect-hrana
+sqlalchemy-libsql
