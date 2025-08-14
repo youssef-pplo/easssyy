@@ -2,6 +2,7 @@
 from fastapi import FastAPI, HTTPException, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
+from fastapi.responses import HTMLResponse # <-- NEW IMPORT
 from passlib.hash import bcrypt
 from jose import JWTError, jwt
 from pydantic import BaseModel
@@ -69,8 +70,7 @@ def decode_token_or_none(token: str):
     except JWTError:
         return None
 
-# **CORRECTED DEPENDENCY**
-# Dependency to get current student from DB. The old get_db parameter is now removed.
+# Dependency to get current student from DB
 async def get_current_student(token: str = Depends(oauth2_scheme)):
     payload = decode_token_or_none(token)
     if not payload:
@@ -93,7 +93,6 @@ def root():
 
 @app.post("/register")
 async def register(data: RegisterRequest):
-    # Check if phone or email already exists
     if await student_collection.find_one({"$or": [{"phone": data.phone}, {"email": data.email}]}):
         raise HTTPException(status_code=400, detail="Phone or Email already exists")
 
@@ -111,7 +110,6 @@ async def register(data: RegisterRequest):
     result = await student_collection.insert_one(student_data)
     new_student_id = str(result.inserted_id)
 
-    # Send OTP (optional, can be commented out for testing)
     try:
         requests.post(OTP_SEND_URL, data={"email": data.email})
     except Exception as e:
@@ -143,9 +141,6 @@ async def login(data: LoginRequest):
     if not student or not verify_password(data.password, student["password"]):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    # The OTP check logic (if you wish to implement it fully) would go here.
-    # For now, a successful password check is enough to log in.
-
     student_id = str(student["_id"])
     return {
         "access_token": create_access_token(student_id),
@@ -154,8 +149,6 @@ async def login(data: LoginRequest):
 
 @app.get("/student/profile", response_model=StudentProfileResponse)
 async def get_student_profile(current_student: dict = Depends(get_current_student)):
-    # The dependency returns the student document from MongoDB
-    # We add the id field to the response, converting the ObjectId
     profile_data = current_student.copy()
     profile_data['id'] = str(current_student['_id'])
     return StudentProfileResponse(**profile_data)
@@ -167,25 +160,20 @@ async def edit_profile(data: StudentEditRequest, current_student: dict = Depends
     if not update_data:
         raise HTTPException(status_code=400, detail="No data provided to update")
     
-    # Hash password if it's being updated
     if "password" in update_data and update_data["password"]:
         update_data["password"] = hash_password(update_data["password"])
     else:
-        update_data.pop("password", None) # Remove password from update if it's empty
+        update_data.pop("password", None)
 
     await student_collection.update_one(
         {"_id": current_student["_id"]},
         {"$set": update_data}
     )
 
-    # Fetch the updated student data to return
     updated_student_doc = await student_collection.find_one({"_id": current_student["_id"]})
     
-    # Prepare the response using the Pydantic model to ensure structure
     response_data = StudentProfileResponse(**updated_student_doc).dict()
-    # Manually exclude the hashed password from the final JSON response
     response_data.pop("password", None)
-
 
     return {
         "message": "Profile updated successfully",
@@ -205,7 +193,6 @@ async def refresh_token(data: RefreshRequest):
     if sub is None:
         raise HTTPException(status_code=401, detail="Invalid refresh token payload")
 
-    # Check if student still exists in the database
     student = await student_collection.find_one({"_id": ObjectId(sub)})
     if not student:
         raise HTTPException(status_code=401, detail="User for this token no longer exists")
@@ -214,3 +201,178 @@ async def refresh_token(data: RefreshRequest):
     new_refresh = create_refresh_token(sub)
 
     return {"access_token": new_access, "refresh_token": new_refresh}
+
+
+# --- NEW TESTING FRONTEND ---
+@app.get("/try", response_class=HTMLResponse)
+async def get_test_frontend():
+    html_content = """
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>API Tester</title>
+        <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 40px; background-color: #f4f4f9; color: #333; }
+            .container { max-width: 800px; margin: 0 auto; background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+            h1, h2 { color: #5a5a5a; border-bottom: 2px solid #eee; padding-bottom: 10px; }
+            form { display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; }
+            input, button { padding: 10px; border-radius: 5px; border: 1px solid #ddd; font-size: 16px; }
+            button { background-color: #007bff; color: white; border: none; cursor: pointer; transition: background-color 0.2s; }
+            button:hover { background-color: #0056b3; }
+            pre { background-color: #2d2d2d; color: #f8f8f2; padding: 15px; border-radius: 5px; white-space: pre-wrap; word-wrap: break-word; }
+            .token-storage { margin-top: 20px; }
+            .token-storage input { width: 100%; box-sizing: border-box; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>API Tester</h1>
+
+            <div class="token-storage">
+                <h2>Token Storage</h2>
+                <label for="accessToken">Access Token:</label>
+                <input type="text" id="accessToken" placeholder="Access token will appear here after login/register">
+                <label for="refreshToken">Refresh Token:</label>
+                <input type="text" id="refreshToken" placeholder="Refresh token will appear here after login/register">
+            </div>
+
+            <h2>/register</h2>
+            <form id="registerForm">
+                <input type="text" id="regName" placeholder="Name" value="Test User">
+                <input type="text" id="regPhone" placeholder="Phone" value="1234567890">
+                <input type="email" id="regEmail" placeholder="Email" value="test@example.com">
+                <input type="text" id="regParentPhone" placeholder="Parent Phone" value="0987654321">
+                <input type="text" id="regCity" placeholder="City" value="Cairo">
+                <input type="text" id="regGrade" placeholder="Grade" value="10">
+                <input type="text" id="regLang" placeholder="Language" value="en">
+                <input type="password" id="regPassword" placeholder="Password" value="password123">
+                <input type="password" id="regConfirmPassword" placeholder="Confirm Password" value="password123">
+                <button type="submit">Register</button>
+            </form>
+
+            <h2>/login</h2>
+            <form id="loginForm">
+                <input type="text" id="loginIdentifier" placeholder="Email, Phone, or Student Code" value="test@example.com">
+                <input type="password" id="loginPassword" placeholder="Password" value="password123">
+                <button type="submit">Login</button>
+            </form>
+
+            <h2>/student/profile (GET)</h2>
+            <button id="getProfileBtn">Get Profile</button>
+
+            <h2>/student/profile/edit (PUT)</h2>
+            <form id="editProfileForm">
+                <input type="text" id="editName" placeholder="New Name">
+                <input type="email" id="editEmail" placeholder="New Email">
+                <button type="submit">Update Profile</button>
+            </form>
+
+            <h2>/token/refresh (POST)</h2>
+            <button id="refreshTokenBtn">Refresh Token</button>
+
+            <h2>API Response</h2>
+            <pre id="responseOutput">Response will be shown here...</pre>
+        </div>
+
+        <script>
+            const responseOutput = document.getElementById('responseOutput');
+            const accessTokenInput = document.getElementById('accessToken');
+            const refreshTokenInput = document.getElementById('refreshToken');
+
+            async function apiCall(endpoint, method = 'GET', body = null, token = null) {
+                const headers = { 'Content-Type': 'application/json' };
+                if (token) {
+                    headers['Authorization'] = `Bearer ${token}`;
+                }
+
+                try {
+                    const options = { method, headers };
+                    if (body) {
+                        options.body = JSON.stringify(body);
+                    }
+                    const response = await fetch(endpoint, options);
+                    const data = await response.json();
+                    responseOutput.textContent = JSON.stringify(data, null, 2);
+                    
+                    if (data.access_token) {
+                        accessTokenInput.value = data.access_token;
+                    }
+                    if (data.refresh_token) {
+                        refreshTokenInput.value = data.refresh_token;
+                    }
+                } catch (error) {
+                    responseOutput.textContent = `Error: ${error.message}`;
+                }
+            }
+
+            // Register
+            document.getElementById('registerForm').addEventListener('submit', (e) => {
+                e.preventDefault();
+                const body = {
+                    name: document.getElementById('regName').value,
+                    phone: document.getElementById('regPhone').value,
+                    email: document.getElementById('regEmail').value,
+                    parent_phone: document.getElementById('regParentPhone').value,
+                    city: document.getElementById('regCity').value,
+                    grade: document.getElementById('regGrade').value,
+                    lang: document.getElementById('regLang').value,
+                    password: document.getElementById('regPassword').value,
+                    confirm_password: document.getElementById('regConfirmPassword').value,
+                };
+                apiCall('/register', 'POST', body);
+            });
+
+            // Login
+            document.getElementById('loginForm').addEventListener('submit', (e) => {
+                e.preventDefault();
+                const body = {
+                    identifier: document.getElementById('loginIdentifier').value,
+                    password: document.getElementById('loginPassword').value,
+                };
+                apiCall('/login', 'POST', body);
+            });
+
+            // Get Profile
+            document.getElementById('getProfileBtn').addEventListener('click', () => {
+                const token = accessTokenInput.value;
+                if (!token) {
+                    responseOutput.textContent = 'Error: Access token is missing. Please log in first.';
+                    return;
+                }
+                apiCall('/student/profile', 'GET', null, token);
+            });
+
+            // Edit Profile
+            document.getElementById('editProfileForm').addEventListener('submit', (e) => {
+                e.preventDefault();
+                const token = accessTokenInput.value;
+                 if (!token) {
+                    responseOutput.textContent = 'Error: Access token is missing. Please log in first.';
+                    return;
+                }
+                const body = {};
+                const name = document.getElementById('editName').value;
+                const email = document.getElementById('editEmail').value;
+                if(name) body.name = name;
+                if(email) body.email = email;
+                
+                apiCall('/student/profile/edit', 'PUT', body, token);
+            });
+            
+            // Refresh Token
+            document.getElementById('refreshTokenBtn').addEventListener('click', () => {
+                const token = refreshTokenInput.value;
+                if (!token) {
+                    responseOutput.textContent = 'Error: Refresh token is missing. Please log in or register first.';
+                    return;
+                }
+                apiCall('/token/refresh', 'POST', { refresh_token: token });
+            });
+
+        </script>
+    </body>
+    </html>
+    """
+    return HTMLResponse(content=html_content)
