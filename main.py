@@ -69,7 +69,8 @@ def decode_token_or_none(token: str):
     except JWTError:
         return None
 
-# Dependency to get current student from DB
+# **CORRECTED DEPENDENCY**
+# Dependency to get current student from DB. The old get_db parameter is now removed.
 async def get_current_student(token: str = Depends(oauth2_scheme)):
     payload = decode_token_or_none(token)
     if not payload:
@@ -142,8 +143,8 @@ async def login(data: LoginRequest):
     if not student or not verify_password(data.password, student["password"]):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    # The OTP check can remain the same
-    # ...
+    # The OTP check logic (if you wish to implement it fully) would go here.
+    # For now, a successful password check is enough to log in.
 
     student_id = str(student["_id"])
     return {
@@ -154,7 +155,10 @@ async def login(data: LoginRequest):
 @app.get("/student/profile", response_model=StudentProfileResponse)
 async def get_student_profile(current_student: dict = Depends(get_current_student)):
     # The dependency returns the student document from MongoDB
-    return StudentProfileResponse(**current_student)
+    # We add the id field to the response, converting the ObjectId
+    profile_data = current_student.copy()
+    profile_data['id'] = str(current_student['_id'])
+    return StudentProfileResponse(**profile_data)
 
 
 @app.put("/student/profile/edit")
@@ -164,8 +168,10 @@ async def edit_profile(data: StudentEditRequest, current_student: dict = Depends
         raise HTTPException(status_code=400, detail="No data provided to update")
     
     # Hash password if it's being updated
-    if "password" in update_data:
+    if "password" in update_data and update_data["password"]:
         update_data["password"] = hash_password(update_data["password"])
+    else:
+        update_data.pop("password", None) # Remove password from update if it's empty
 
     await student_collection.update_one(
         {"_id": current_student["_id"]},
@@ -173,11 +179,17 @@ async def edit_profile(data: StudentEditRequest, current_student: dict = Depends
     )
 
     # Fetch the updated student data to return
-    updated_student = await student_collection.find_one({"_id": current_student["_id"]})
+    updated_student_doc = await student_collection.find_one({"_id": current_student["_id"]})
+    
+    # Prepare the response using the Pydantic model to ensure structure
+    response_data = StudentProfileResponse(**updated_student_doc).dict()
+    # Manually exclude the hashed password from the final JSON response
+    response_data.pop("password", None)
+
 
     return {
         "message": "Profile updated successfully",
-        "student": StudentProfileResponse(**updated_student).dict(exclude={"password"})
+        "student": response_data
     }
 
 class RefreshRequest(BaseModel):
@@ -193,117 +205,12 @@ async def refresh_token(data: RefreshRequest):
     if sub is None:
         raise HTTPException(status_code=401, detail="Invalid refresh token payload")
 
-    # Check if student still exists
+    # Check if student still exists in the database
     student = await student_collection.find_one({"_id": ObjectId(sub)})
     if not student:
-        raise HTTPException(status_code=401, detail="User not found")
+        raise HTTPException(status_code=401, detail="User for this token no longer exists")
 
     new_access = create_access_token(sub)
     new_refresh = create_refresh_token(sub)
 
     return {"access_token": new_access, "refresh_token": new_refresh}
-# -------------------------
-# Dependency: current student
-# -------------------------
-def get_current_student(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> Student:
-    """
-    Validates Authorization Bearer token and returns Student object.
-    Raises 401 if token invalid, 404 if student not found.
-    """
-    payload = decode_token_or_none(token)
-    if not payload:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
-
-    sub = payload.get("sub")
-    if sub is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload")
-
-    # convert to int if possible
-    try:
-        student_id = int(sub)
-    except Exception:
-        student_id = sub
-
-    student = db.query(Student).filter(Student.id == student_id).first()
-    if not student:
-        raise HTTPException(status_code=404, detail="Student not found")
-    return student
-
-# -------------------------
-# Student profile endpoint
-# -------------------------
-class StudentProfileResponse(BaseModel):
-    student_code: Optional[str]
-    name: Optional[str]
-    phone: Optional[str]
-    email: Optional[str]
-    username: Optional[str]
-    parent_phone: Optional[str]
-    city: Optional[str]
-    lang: Optional[str]
-    grade: Optional[str]
-    password: str
-
-@app.get("/student/profile", response_model=StudentProfileResponse)
-def get_student_profile(current_student: Student = Depends(get_current_student)):
-    """
-    Returns the authenticated student's profile. Missing fields become null.
-    The password is masked.
-    """
-    return StudentProfileResponse(
-        student_code=getattr(current_student, "student_code", None),
-        name=getattr(current_student, "name", None),
-        phone=getattr(current_student, "phone", None),
-        email=getattr(current_student, "email", None),
-        username=getattr(current_student, "student_code", None),
-        parent_phone=getattr(current_student, "parent_phone", None),
-        city=getattr(current_student, "city", None),
-        lang=getattr(current_student, "lang", None),
-        grade=getattr(current_student, "grade", None) or getattr(current_student, "year_of_study", None),
-        password="****"
-    )
-
-
-
-#--
-# edit 
-#--
- 
-
-@app.put("/student/profile/edit")
-def edit_profile(
-    data: StudentEditRequest,
-    current_student: Student = Depends(get_current_student),
-    db: Session = Depends(get_db)
-):
-    update_data = data.dict(exclude_unset=True)
-    if not update_data:
-        raise HTTPException(status_code=400, detail="No data provided to update")
-
-    for key, value in update_data.items():
-        setattr(current_student, key, value)
-
-    db.commit()
-    db.refresh(current_student)
-
-    return {
-        "message": "Profile updated successfully",
-        "student": {
-            "student_code": current_student.student_code,
-            "name": current_student.name,
-            "email": current_student.email,
-            "phone": current_student.phone,
-            "username": getattr(current_student, "username", None),
-            "parent_phone": current_student.parent_phone,
-            "city": current_student.city,
-            "lang": current_student.lang,
-            "grade": current_student.grade,
-        }
-    }
-
-# -------------------------
-# Health / debug route
-# -------------------------
-@app.get("/")
-def root():
-    return {"status": "ok"}
