@@ -1,29 +1,18 @@
 # database.py
-
-from sqlalchemy import create_engine
-from sqlalchemy.orm import declarative_base, sessionmaker
 import os
+import motor.motor_asyncio
+from dotenv import load_dotenv
 
-# Get Turso credentials from environment variables
-db_url_from_env = os.environ.get("TURSO_DATABASE_URL", "")
-auth_token = os.environ.get("TURSO_AUTH_TOKEN")
+load_dotenv()
 
-# **THE FIX IS HERE:**
-# The environment variable from Vercel includes "libsql://". We must remove it
-# before building the final SQLAlchemy connection string to avoid duplication.
-if db_url_from_env.startswith("libsql://"):
-    db_hostname = db_url_from_env[len("libsql://"):]
-else:
-    db_hostname = db_url_from_env
+# Get the MongoDB connection string from environment variables
+MONGO_URI = "mongodb+srv://youssefdev74:h3P0rZS2ZDU0zoYA@cluster0.1msxyqh.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
 
-# This now creates the correctly formatted URL
-SQLALCHEMY_DATABASE_URL = f"sqlite+libsql://{db_hostname}?authToken={auth_token}&secure=true"
+# Create an async client to connect to your MongoDB Atlas cluster
+client = motor.motor_asyncio.AsyncIOMotorClient(MONGO_URI)
 
+# Get a reference to your database (it will be created if it doesn't exist)
+db = client.easybio_db
 
-engine = create_engine(
-    SQLALCHEMY_DATABASE_URL,
-    connect_args={"check_same_thread": False},
-)
-
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
+# Get a reference to your collection of students (like a table in SQL)
+student_collection = db.get_collection("students")
