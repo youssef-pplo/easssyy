@@ -1,11 +1,12 @@
-from pydantic import BaseModel
+# schemas.py
+from pydantic import BaseModel, Field
 from typing import Optional
 
 class RegisterRequest(BaseModel):
     name: str
     phone: str
     email: str
-    parent_phone: str   
+    parent_phone: str
     city: str
     grade: str
     lang: str
@@ -22,23 +23,20 @@ class TokenResponse(BaseModel):
 
 class StudentProfileResponse(BaseModel):
     student_code: Optional[str] = None
-    name: str
-    phone_number: str
-    email: str
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
     username: Optional[str] = None
     parent_phone: Optional[str] = None
-    city: str
-    lang: str
-    grade: str
-    password: str
-
+    city: Optional[str] = None
+    lang: Optional[str] = None
+    grade: Optional[str] = None
+    password: str = "****" # Always masked
 
 class StudentEditRequest(BaseModel):
-    student_code: Optional[str] = None
     name: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
-    username: Optional[str] = None
     parent_phone: Optional[str] = None
     city: Optional[str] = None
     lang: Optional[str] = None
