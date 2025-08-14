@@ -2,7 +2,7 @@
 from fastapi import FastAPI, HTTPException, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from passlib.hash import bcrypt
 from jose import JWTError, jwt
 from pydantic import BaseModel
@@ -13,6 +13,7 @@ import string
 from bson import ObjectId
 from datetime import datetime, timedelta
 from contextlib import asynccontextmanager
+import traceback # For detailed error logging
 
 # Import the new connection handlers and collection getter
 from database import connect_to_mongo, close_mongo_connection, get_student_collection
@@ -37,7 +38,6 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 REFRESH_TOKEN_EXPIRE_DAYS = 7
 OTP_SEND_URL = "https://easybio-drabdelrahman.com/otp-system/send_otp.php"
-OTP_STATUS_URL = "https://easybio-drabdelrahman.com/otp-system/status.php"
 
 app.add_middleware(
     CORSMiddleware,
@@ -83,20 +83,26 @@ async def get_current_student(
     token: str = Depends(oauth2_scheme),
     student_collection: AsyncIOMotorCollection = Depends(get_student_collection)
 ):
-    payload = decode_token_or_none(token)
-    if not payload:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+    try:
+        payload = decode_token_or_none(token)
+        if not payload:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
 
-    sub = payload.get("sub")
-    if sub is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload")
+        sub = payload.get("sub")
+        if sub is None:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload")
 
-    student = await student_collection.find_one({"_id": ObjectId(sub)})
-    if not student:
-        raise HTTPException(status_code=404, detail="Student not found")
-    return student
+        student = await student_collection.find_one({"_id": ObjectId(sub)})
+        if not student:
+            raise HTTPException(status_code=404, detail="Student not found")
+        return student
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error in get_current_student: {str(e)}\n{traceback.format_exc()}")
 
-# --- API Endpoints ---
+
+# --- API Endpoints with Full Error Catching ---
 
 @app.get("/")
 def root():
@@ -107,53 +113,70 @@ async def register(
     data: RegisterRequest,
     student_collection: AsyncIOMotorCollection = Depends(get_student_collection)
 ):
-    if await student_collection.find_one({"$or": [{"phone": data.phone}, {"email": data.email}]}):
-        raise HTTPException(status_code=400, detail="Phone or Email already exists")
-
-    if data.password != data.confirm_password:
-        raise HTTPException(status_code=400, detail="Passwords do not match")
-
-    hashed_pass = hash_password(data.password)
-    new_student_code = generate_student_code()
-
-    student_data = data.dict()
-    student_data.pop("confirm_password")
-    student_data["password"] = hashed_pass
-    student_data["student_code"] = new_student_code
-
-    result = await student_collection.insert_one(student_data)
-    new_student_id = str(result.inserted_id)
-
     try:
-        requests.post(OTP_SEND_URL, data={"email": data.email})
-    except Exception as e:
-        print("Failed to send OTP:", e)
+        if await student_collection.find_one({"$or": [{"phone": data.phone}, {"email": data.email}]}):
+            raise HTTPException(status_code=400, detail="Phone or Email already exists")
 
-    return {
-        "message": "Registered successfully. Please verify your email.",
-        "access_token": create_access_token(new_student_id),
-        "refresh_token": create_refresh_token(new_student_id),
-        "student": {"id": new_student_id, "student_code": new_student_code, "name": data.name, "phone": data.phone, "email": data.email}
-    }
+        if data.password != data.confirm_password:
+            raise HTTPException(status_code=400, detail="Passwords do not match")
+
+        hashed_pass = hash_password(data.password)
+        new_student_code = generate_student_code()
+
+        student_data = data.dict()
+        student_data.pop("confirm_password")
+        student_data["password"] = hashed_pass
+        student_data["student_code"] = new_student_code
+
+        result = await student_collection.insert_one(student_data)
+        new_student_id = str(result.inserted_id)
+
+        try:
+            requests.post(OTP_SEND_URL, data={"email": data.email})
+        except Exception as e:
+            print(f"Non-critical error: Failed to send OTP: {e}")
+
+        return {
+            "message": "Registered successfully. Please verify your email.",
+            "access_token": create_access_token(new_student_id),
+            "refresh_token": create_refresh_token(new_student_id),
+            "student": {"id": new_student_id, "student_code": new_student_code, "name": data.name, "phone": data.phone, "email": data.email}
+        }
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred in /register: {str(e)}\n{traceback.format_exc()}")
+
 
 @app.post("/login", response_model=TokenResponse)
 async def login(
     data: LoginRequest,
     student_collection: AsyncIOMotorCollection = Depends(get_student_collection)
 ):
-    student = await student_collection.find_one({"$or": [{"phone": data.identifier}, {"email": data.identifier}, {"student_code": data.identifier}]})
+    try:
+        student = await student_collection.find_one({"$or": [{"phone": data.identifier}, {"email": data.identifier}, {"student_code": data.identifier}]})
 
-    if not student or not verify_password(data.password, student["password"]):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+        if not student or not verify_password(data.password, student["password"]):
+            raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    student_id = str(student["_id"])
-    return {"access_token": create_access_token(student_id), "refresh_token": create_refresh_token(student_id)}
+        student_id = str(student["_id"])
+        return {"access_token": create_access_token(student_id), "refresh_token": create_refresh_token(student_id)}
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred in /login: {str(e)}\n{traceback.format_exc()}")
 
 @app.get("/student/profile", response_model=StudentProfileResponse)
 async def get_student_profile(current_student: dict = Depends(get_current_student)):
-    profile_data = current_student.copy()
-    profile_data['id'] = str(current_student['_id'])
-    return StudentProfileResponse(**profile_data)
+    try:
+        profile_data = current_student.copy()
+        profile_data['id'] = str(current_student['_id'])
+        return StudentProfileResponse(**profile_data)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}\n{traceback.format_exc()}")
+
 
 @app.put("/student/profile/edit")
 async def edit_profile(
@@ -161,21 +184,25 @@ async def edit_profile(
     current_student: dict = Depends(get_current_student),
     student_collection: AsyncIOMotorCollection = Depends(get_student_collection)
 ):
-    update_data = data.dict(exclude_unset=True)
-    if not update_data:
-        raise HTTPException(status_code=400, detail="No data provided to update")
+    try:
+        update_data = data.dict(exclude_unset=True)
+        if not update_data:
+            raise HTTPException(status_code=400, detail="No data provided to update")
 
-    if "password" in update_data and update_data["password"]:
-        update_data["password"] = hash_password(update_data["password"])
-    else:
-        update_data.pop("password", None)
+        if "password" in update_data and update_data["password"]:
+            update_data["password"] = hash_password(update_data["password"])
+        else:
+            update_data.pop("password", None)
 
-    await student_collection.update_one({"_id": current_student["_id"]}, {"$set": update_data})
-    updated_student_doc = await student_collection.find_one({"_id": current_student["_id"]})
-    response_data = StudentProfileResponse(**updated_student_doc).dict()
-    response_data.pop("password", None)
+        await student_collection.update_one({"_id": current_student["_id"]}, {"$set": update_data})
+        updated_student_doc = await student_collection.find_one({"_id": current_student["_id"]})
+        
+        response_data = StudentProfileResponse(**updated_student_doc).dict()
+        response_data.pop("password", None)
 
-    return {"message": "Profile updated successfully", "student": response_data}
+        return {"message": "Profile updated successfully", "student": response_data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}\n{traceback.format_exc()}")
 
 class RefreshRequest(BaseModel):
     refresh_token: str
@@ -185,26 +212,28 @@ async def refresh_token(
     data: RefreshRequest,
     student_collection: AsyncIOMotorCollection = Depends(get_student_collection)
 ):
-    payload = decode_token_or_none(data.refresh_token)
-    if not payload:
-        raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
+    try:
+        payload = decode_token_or_none(data.refresh_token)
+        if not payload:
+            raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
 
-    sub = payload.get("sub")
-    if sub is None:
-        raise HTTPException(status_code=401, detail="Invalid refresh token payload")
+        sub = payload.get("sub")
+        if sub is None:
+            raise HTTPException(status_code=401, detail="Invalid refresh token payload")
 
-    student = await student_collection.find_one({"_id": ObjectId(sub)})
-    if not student:
-        raise HTTPException(status_code=401, detail="User for this token no longer exists")
+        student = await student_collection.find_one({"_id": ObjectId(sub)})
+        if not student:
+            raise HTTPException(status_code=401, detail="User for this token no longer exists")
 
-    new_access, new_refresh = create_access_token(sub), create_refresh_token(sub)
-    return {"access_token": new_access, "refresh_token": new_refresh}
+        new_access, new_refresh = create_access_token(sub), create_refresh_token(sub)
+        return {"access_token": new_access, "refresh_token": new_refresh}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}\n{traceback.format_exc()}")
 
+
+# --- NEW TESTING FRONTEND ---
 @app.get("/try", response_class=HTMLResponse)
 async def get_test_frontend():
-    # HTML content from your previous version goes here. It is unchanged.
-    # I have omitted it for brevity, but you should paste the full HTML string back in.
-    # It starts with: html_content = """ <!DOCTYPE html> ... """
     html_content = """
     <!DOCTYPE html>
     <html lang="en">
