@@ -1,12 +1,12 @@
 # database.py
 import os
 import motor.motor_asyncio
+# database.py
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv() # This line reads your .env file
 
-# Get the MongoDB connection string from environment variables
-MONGO_URI = "mongodb+srv://youssefdev74:h3P0rZS2ZDU0zoYA@cluster0.1msxyqh.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
+MONGO_URI = os.environ.get("MONGODB_URI")
 
 # Create an async client to connect to your MongoDB Atlas cluster
 client = motor.motor_asyncio.AsyncIOMotorClient(MONGO_URI)
