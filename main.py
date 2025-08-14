@@ -2,7 +2,7 @@
 from fastapi import FastAPI, HTTPException, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
-from fastapi.responses import HTMLResponse # <-- NEW IMPORT
+from fastapi.responses import HTMLResponse
 from passlib.hash import bcrypt
 from jose import JWTError, jwt
 from pydantic import BaseModel
@@ -12,23 +12,32 @@ import random
 import string
 from bson import ObjectId
 from datetime import datetime, timedelta
+from contextlib import asynccontextmanager
 
-# Import the student collection from our new database file
-from database import student_collection
+# Import the new connection handlers and collection getter
+from database import connect_to_mongo, close_mongo_connection, get_student_collection
 from schemas import RegisterRequest, LoginRequest, TokenResponse, StudentEditRequest, StudentProfileResponse
+from motor.motor_asyncio import AsyncIOMotorCollection
+
+# --- Lifespan Manager for DB Connection ---
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # On startup
+    await connect_to_mongo()
+    yield
+    # On shutdown
+    await close_mongo_connection()
+
+# --- App Initialization with Lifespan ---
+app = FastAPI(lifespan=lifespan)
 
 # --- Configuration ---
 SECRET_KEY = "Ea$yB1o"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 REFRESH_TOKEN_EXPIRE_DAYS = 7
-
-# --- External OTP URLs ---
 OTP_SEND_URL = "https://easybio-drabdelrahman.com/otp-system/send_otp.php"
 OTP_STATUS_URL = "https://easybio-drabdelrahman.com/otp-system/status.php"
-
-# --- App Initialization ---
-app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
@@ -41,7 +50,6 @@ app.add_middleware(
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
 # --- Helper Functions ---
-
 def create_token(data: dict, expires_delta: timedelta):
     to_encode = data.copy()
     expire = datetime.utcnow() + expires_delta
@@ -70,8 +78,11 @@ def decode_token_or_none(token: str):
     except JWTError:
         return None
 
-# Dependency to get current student from DB
-async def get_current_student(token: str = Depends(oauth2_scheme)):
+# --- Dependency to get current student from DB ---
+async def get_current_student(
+    token: str = Depends(oauth2_scheme),
+    student_collection: AsyncIOMotorCollection = Depends(get_student_collection)
+):
     payload = decode_token_or_none(token)
     if not payload:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
@@ -92,7 +103,10 @@ def root():
     return {"status": "ok"}
 
 @app.post("/register")
-async def register(data: RegisterRequest):
+async def register(
+    data: RegisterRequest,
+    student_collection: AsyncIOMotorCollection = Depends(get_student_collection)
+):
     if await student_collection.find_one({"$or": [{"phone": data.phone}, {"email": data.email}]}):
         raise HTTPException(status_code=400, detail="Phone or Email already exists")
 
@@ -119,33 +133,21 @@ async def register(data: RegisterRequest):
         "message": "Registered successfully. Please verify your email.",
         "access_token": create_access_token(new_student_id),
         "refresh_token": create_refresh_token(new_student_id),
-        "student": {
-            "id": new_student_id,
-            "student_code": new_student_code,
-            "name": data.name,
-            "phone": data.phone,
-            "email": data.email,
-        }
+        "student": {"id": new_student_id, "student_code": new_student_code, "name": data.name, "phone": data.phone, "email": data.email}
     }
 
 @app.post("/login", response_model=TokenResponse)
-async def login(data: LoginRequest):
-    student = await student_collection.find_one({
-        "$or": [
-            {"phone": data.identifier},
-            {"email": data.identifier},
-            {"student_code": data.identifier}
-        ]
-    })
+async def login(
+    data: LoginRequest,
+    student_collection: AsyncIOMotorCollection = Depends(get_student_collection)
+):
+    student = await student_collection.find_one({"$or": [{"phone": data.identifier}, {"email": data.identifier}, {"student_code": data.identifier}]})
 
     if not student or not verify_password(data.password, student["password"]):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     student_id = str(student["_id"])
-    return {
-        "access_token": create_access_token(student_id),
-        "refresh_token": create_refresh_token(student_id)
-    }
+    return {"access_token": create_access_token(student_id), "refresh_token": create_refresh_token(student_id)}
 
 @app.get("/student/profile", response_model=StudentProfileResponse)
 async def get_student_profile(current_student: dict = Depends(get_current_student)):
@@ -153,38 +155,36 @@ async def get_student_profile(current_student: dict = Depends(get_current_studen
     profile_data['id'] = str(current_student['_id'])
     return StudentProfileResponse(**profile_data)
 
-
 @app.put("/student/profile/edit")
-async def edit_profile(data: StudentEditRequest, current_student: dict = Depends(get_current_student)):
+async def edit_profile(
+    data: StudentEditRequest,
+    current_student: dict = Depends(get_current_student),
+    student_collection: AsyncIOMotorCollection = Depends(get_student_collection)
+):
     update_data = data.dict(exclude_unset=True)
     if not update_data:
         raise HTTPException(status_code=400, detail="No data provided to update")
-    
+
     if "password" in update_data and update_data["password"]:
         update_data["password"] = hash_password(update_data["password"])
     else:
         update_data.pop("password", None)
 
-    await student_collection.update_one(
-        {"_id": current_student["_id"]},
-        {"$set": update_data}
-    )
-
+    await student_collection.update_one({"_id": current_student["_id"]}, {"$set": update_data})
     updated_student_doc = await student_collection.find_one({"_id": current_student["_id"]})
-    
     response_data = StudentProfileResponse(**updated_student_doc).dict()
     response_data.pop("password", None)
 
-    return {
-        "message": "Profile updated successfully",
-        "student": response_data
-    }
+    return {"message": "Profile updated successfully", "student": response_data}
 
 class RefreshRequest(BaseModel):
     refresh_token: str
 
 @app.post("/token/refresh")
-async def refresh_token(data: RefreshRequest):
+async def refresh_token(
+    data: RefreshRequest,
+    student_collection: AsyncIOMotorCollection = Depends(get_student_collection)
+):
     payload = decode_token_or_none(data.refresh_token)
     if not payload:
         raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
@@ -197,15 +197,14 @@ async def refresh_token(data: RefreshRequest):
     if not student:
         raise HTTPException(status_code=401, detail="User for this token no longer exists")
 
-    new_access = create_access_token(sub)
-    new_refresh = create_refresh_token(sub)
-
+    new_access, new_refresh = create_access_token(sub), create_refresh_token(sub)
     return {"access_token": new_access, "refresh_token": new_refresh}
 
-
-# --- NEW TESTING FRONTEND ---
 @app.get("/try", response_class=HTMLResponse)
 async def get_test_frontend():
+    # HTML content from your previous version goes here. It is unchanged.
+    # I have omitted it for brevity, but you should paste the full HTML string back in.
+    # It starts with: html_content = """ <!DOCTYPE html> ... """
     html_content = """
     <!DOCTYPE html>
     <html lang="en">
