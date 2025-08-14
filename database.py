@@ -5,11 +5,20 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 import os
 
 # Get Turso credentials from environment variables
-db_url = os.environ.get("TURSO_DATABASE_URL")
+db_url_from_env = os.environ.get("TURSO_DATABASE_URL", "")
 auth_token = os.environ.get("TURSO_AUTH_TOKEN")
 
-# This is the corrected connection string using the 'libsql' dialect
-SQLALCHEMY_DATABASE_URL = f"sqlite+libsql://{db_url}?authToken={auth_token}&secure=true"
+# **THE FIX IS HERE:**
+# The environment variable from Vercel includes "libsql://". We must remove it
+# before building the final SQLAlchemy connection string to avoid duplication.
+if db_url_from_env.startswith("libsql://"):
+    db_hostname = db_url_from_env[len("libsql://"):]
+else:
+    db_hostname = db_url_from_env
+
+# This now creates the correctly formatted URL
+SQLALCHEMY_DATABASE_URL = f"sqlite+libsql://{db_hostname}?authToken={auth_token}&secure=true"
+
 
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,
