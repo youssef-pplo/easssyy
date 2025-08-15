@@ -1,4 +1,3 @@
-
 # database.py
 import os
 import motor.motor_asyncio
@@ -9,66 +8,59 @@ load_dotenv()
 
 MONGO_URI = os.environ.get("MONGODB_URI")
 
-class DataBase:
-    client: motor.motor_asyncio.AsyncIOMotorClient = None
+# We will manage the client connection on a per-request basis
+# This is the most reliable pattern for serverless environments like Vercel
 
-db = DataBase()
-
-async def get_database() -> motor.motor_asyncio.AsyncIOMotorDatabase:
-    # This check ensures the client is connected before trying to get the DB
-    if db.client is None:
-        await connect_to_mongo()
-    return db.client.easybio_db
-
-async def connect_to_mongo():
-    print("Attempting to connect to MongoDB...")
+async def get_db_client() -> motor.motor_asyncio.AsyncIOMotorClient:
+    """
+    Dependency function that creates and yields a new MongoDB client for each request.
+    This ensures that each serverless invocation gets a fresh, valid connection.
+    """
     if not MONGO_URI:
-        print("FATAL ERROR: MONGODB_URI environment variable is not set on Vercel.")
-        # In a serverless environment, we shouldn't exit, but this indicates a critical config error.
-        return
+        print("FATAL ERROR: MONGODB_URI environment variable is not set.")
+        # In a serverless function, we should raise an exception to signal a configuration error
+        raise HTTPException(status_code=500, detail="Database configuration error.")
 
+    client = None
     try:
-        # Create a new client instance for the serverless function
-        db.client = motor.motor_asyncio.AsyncIOMotorClient(MONGO_URI)
-        await db.client.admin.command('ping')
-        print("MongoDB connection successful.")
-    except Exception as e:
-        print("------------------------------------------------------")
-        print("FATAL ERROR: Could not connect to MongoDB.")
-        print(f"Error details: {e}")
-        print("------------------------------------------------------")
+        print("Creating new MongoDB client for request...")
+        client = motor.motor_asyncio.AsyncIOMotorClient(MONGO_URI)
+        await client.admin.command('ping') # Verify connection
+        yield client
+    finally:
+        if client:
+            print("Closing MongoDB client for request.")
+            client.close()
 
-async def close_mongo_connection():
-    if db.client:
-        print("Closing MongoDB connection...")
-        db.client.close()
-        db.client = None # Important for serverless environments
-        print("Connection closed.")
+async def get_database(client: motor.motor_asyncio.AsyncIOMotorClient = Depends(get_db_client)):
+    return client.easybio_db
 
-async def get_student_collection():
-    database = await get_database()
-    return database.get_collection("students")
+async def get_student_collection(db = Depends(get_database)):
+    return db.get_collection("students")
 
-async def get_token_blacklist_collection():
-    database = await get_database()
-    collection = database.get_collection("token_blacklist")
-    # This TTL index automatically deletes tokens from the blacklist after they expire
+async def get_token_blacklist_collection(db = Depends(get_database)):
+    collection = db.get_collection("token_blacklist")
     index_name = "expire_at_1"
-    existing_indexes = await collection.index_information()
-    if index_name not in existing_indexes:
-        await collection.create_index("expire_at", expireAfterSeconds=0)
+    # This check is now less critical per-request but good practice
+    # In a real high-traffic app, you might run index creation separately
+    try:
+        existing_indexes = await collection.index_information()
+        if index_name not in existing_indexes:
+            await collection.create_index("expire_at", expireAfterSeconds=0)
+    except Exception as e:
+        print(f"Could not ensure index on token_blacklist: {e}")
     return collection
 
-async def get_receipt_collection():
-    database = await get_database()
-    return database.get_collection("receipts")
+async def get_receipt_collection(db = Depends(get_database)):
+    return db.get_collection("receipts")
 
-async def get_password_reset_collection():
-    database = await get_database()
-    collection = database.get_collection("password_reset_codes")
-    # This TTL index automatically deletes codes after 10 minutes
-    index_name = "expire_at_1"
-    existing_indexes = await collection.index_information()
-    if index_name not in existing_indexes:
-        await collection.create_index("expire_at", expireAfterSeconds=0)
+async def get_password_reset_collection(db = Depends(get_database)):
+    collection = db.get_collection("password_reset_codes")
+    try:
+        existing_indexes = await collection.index_information()
+        index_name = "expire_at_1"
+        if index_name not in existing_indexes:
+            await collection.create_index("expire_at", expireAfterSeconds=0)
+    except Exception as e:
+        print(f"Could not ensure index on password_reset_codes: {e}")
     return collection
