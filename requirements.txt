@@ -7,3 +7,4 @@ pydantic
 bcrypt==4.0.1
 motor
 python-dotenv
+email-validator

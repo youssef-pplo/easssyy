@@ -24,13 +24,11 @@ async def connect_to_mongo():
     
     try:
         db.client = motor.motor_asyncio.AsyncIOMotorClient(MONGO_URI)
-        # Validate the connection by sending a ping
         await db.client.admin.command('ping')
         print("MongoDB connection successful.")
     except Exception as e:
         print("------------------------------------------------------")
         print("FATAL ERROR: Could not connect to MongoDB.")
-        print("Please check your MONGODB_URI, password (no special characters), and IP access rules.")
         print(f"Error details: {e}")
         print("------------------------------------------------------")
         sys.exit(1)
@@ -44,3 +42,25 @@ async def close_mongo_connection():
 async def get_student_collection():
     database = await get_database()
     return database.get_collection("students")
+
+async def get_token_blacklist_collection():
+    database = await get_database()
+    collection = database.get_collection("token_blacklist")
+    index_name = "expire_at_1"
+    if index_name not in await collection.index_information():
+        await collection.create_index("expire_at", expireAfterSeconds=0)
+    return collection
+
+async def get_receipt_collection():
+    database = await get_database()
+    return database.get_collection("receipts")
+
+# NEW: Collection for password reset codes
+async def get_password_reset_collection():
+    database = await get_database()
+    collection = database.get_collection("password_reset_codes")
+    # This TTL index automatically deletes codes after 10 minutes
+    index_name = "expire_at_1"
+    if index_name not in await collection.index_information():
+        await collection.create_index("expire_at", expireAfterSeconds=0)
+    return collection
