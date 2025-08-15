@@ -11,13 +11,14 @@ import random
 import string
 from bson import ObjectId
 from datetime import datetime, timedelta, timezone
+from contextlib import asynccontextmanager
 import smtplib
 from email.mime.text import MIMEText
 
-# The new database functions manage connections per request
 from database import (
-    get_student_collection, get_token_blacklist_collection,
-    get_receipt_collection, get_password_reset_collection
+    connect_to_mongo, close_mongo_connection, get_student_collection,
+    get_token_blacklist_collection, get_receipt_collection,
+    get_password_reset_collection
 )
 from schemas import (
     RegisterRequest, LoginRequest, TokenResponse, RefreshTokenResponse,
@@ -28,8 +29,13 @@ from schemas import (
 )
 from motor.motor_asyncio import AsyncIOMotorCollection
 
-# IMPORTANT: We remove the lifespan manager as we are now handling connections per request
-app = FastAPI()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await connect_to_mongo()
+    yield
+    await close_mongo_connection()
+
+app = FastAPI(lifespan=lifespan)
 
 # --- Configuration & Middleware ---
 SECRET_KEY = "Ea$yB1o"
@@ -47,14 +53,205 @@ app.add_middleware(
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
-# --- MOCK DATABASE FOR EDUCATIONAL CONTENT ---
-# This remains the same as the last version
+
+# --- NEW COMPREHENSIVE MOCK DATABASE FOR EDUCATIONAL CONTENT ---
 courseImg = "https://via.placeholder.com/200"
 EDUCATIONAL_CONTENT = {
-    "1": { "term1": { "arabic": { "biology": { "chapters": { 101: {"title": "الفصل الأول: الأساس الكيميائي للحياة", "price": "150 جنية"}, 102: {"title": "الفصل الثاني: الخلية", "price": "170 جنية"}, }, "lessons": { 10101: {"chapter_id": 101, "title": "مقدمة أولى ثانوي", "price": "مجانا", "isFree": True}, 10102: {"chapter_id": 101, "title": "التركيب الكيميائي", "price": "75 جنية", "isFree": False}, 10201: {"chapter_id": 102, "title": "النظرية الخلوية", "price": "85 جنية", "isFree": False}, }, "lesson_details": { 10101: {"subject": "أولى ثانوي - ترم أول", "duration": "ساعة", "exams": "لا يوجد", "questions": "10 أسئلة"}, 10102: {"subject": "أولى ثانوي - ترم أول", "duration": "ساعتان", "exams": "1 امتحان", "questions": "30 سؤال"}, 10201: {"subject": "أولى ثانوي - ترم أول", "duration": "ساعة ونصف", "exams": "1 امتحان", "questions": "40 سؤال"}, } } }, "english": { "biology": { "chapters": { 111: {"title": "Chapter 1: Chemical Basis of Life", "price": "150 EGP"}, 112: {"title": "Chapter 2: The Cell", "price": "170 EGP"}, }, "lessons": { 11101: {"chapter_id": 111, "title": "Intro for 1st Year", "price": "Free", "isFree": True}, 11102: {"chapter_id": 111, "title": "Chemical Composition", "price": "75 EGP", "isFree": False}, 11201: {"chapter_id": 112, "title": "Cell Theory", "price": "85 EGP", "isFree": False}, }, "lesson_details": { 11101: {"subject": "1st Year - Term 1", "duration": "1 hour", "exams": "None", "questions": "10 questions"}, 11102: {"subject": "1st Year - Term 1", "duration": "2 hours", "exams": "1 exam", "questions": "30 questions"}, 11201: {"subject": "1st Year - Term 1", "duration": "1.5 hours", "exams": "1 exam", "questions": "40 questions"}, } } } }, "term2": { "arabic": { "biology": { "chapters": { 121: {"title": "الفصل الثالث: الوراثة", "price": "160 جنية"}, }, "lessons": { 12101: {"chapter_id": 121, "title": "قوانين مندل", "price": "80 جنية", "isFree": False}, }, "lesson_details": { 12101: {"subject": "أولى ثانوي - ترم ثاني", "duration": "ساعتان", "exams": "1 امتحان", "questions": "35 سؤال"}, } } }, "english": { "biology": { "chapters": { 131: {"title": "Chapter 3: Genetics", "price": "160 EGP"}, }, "lessons": { 13101: {"chapter_id": 131, "title": "Mendel's Laws", "price": "80 EGP", "isFree": False}, }, "lesson_details": { 13101: {"subject": "1st Year - Term 2", "duration": "2 hours", "exams": "1 exam", "questions": "35 questions"}, } } } } },
-    "2": { "term1": { "arabic": { "biology": { "chapters": { 201: {"title": "الفصل الأول: التغذية والهضم", "price": "200 جنية"}, 202: {"title": "الفصل الثاني: النقل", "price": "210 جنية"}, }, "lessons": { 20101: {"chapter_id": 201, "title": "التغذية الذاتية", "price": "مجانا", "isFree": True}, 20201: {"chapter_id": 202, "title": "النقل في النبات", "price": "105 جنية", "isFree": False}, }, "lesson_details": { 20101: {"subject": "تانية ثانوي - ترم أول", "duration": "ساعة وربع", "exams": "لا يوجد", "questions": "15 سؤال"}, 20201: {"subject": "تانية ثانوي - ترم أول", "duration": "ساعتان", "exams": "1 امتحان", "questions": "45 سؤال"}, } } }, "english": { "biology": { "chapters": { 211: {"title": "Chapter 1: Nutrition and Digestion", "price": "200 EGP"}, }, "lessons": { 21101: {"chapter_id": 211, "title": "Autotrophic Nutrition", "price": "Free", "isFree": True}, }, "lesson_details": { 21101: {"subject": "2nd Year - Term 1", "duration": "1.25 hours", "exams": "None", "questions": "15 questions"}, } } } }, "term2": { "arabic": { "biology": { "chapters": { 221: {"title": "الفصل الثالث: التنفس", "price": "190 جنية"}, }, "lessons": { 22101: {"chapter_id": 221, "title": "التنفس الخلوي", "price": "95 جنية", "isFree": False}, }, "lesson_details": { 22101: {"subject": "تانية ثانوي - ترم ثاني", "duration": "ساعتان", "exams": "1 امتحان", "questions": "50 سؤال"}, } } }, "english": { "biology": { "chapters": { 231: {"title": "Chapter 3: Respiration", "price": "190 EGP"}, }, "lessons": { 23101: {"chapter_id": 231, "title": "Cellular Respiration", "price": "95 EGP", "isFree": False}, }, "lesson_details": { 23101: {"subject": "2nd Year - Term 2", "duration": "2 hours", "exams": "1 exam", "questions": "50 questions"}, } } } } },
-    "3": { "term1": { "arabic": { "biology": { "chapters": { 301: {"title": "الفصل الأول: الدعامة والحركة", "price": "280 جنية"}, }, "lessons": { 30101: {"chapter_id": 301, "title": "الدعامة في الكائنات الحية", "price": "140 جنية", "isFree": False}, }, "lesson_details": { 30101: {"subject": "ثالثة ثانوي - ترم أول", "duration": "3 ساعات", "exams": "2 امتحان", "questions": "90 سؤال"}, } } }, "english": { "biology": { "chapters": { 311: {"title": "Chapter 1: Support and Movement", "price": "280 EGP"}, }, "lessons": { 31101: {"chapter_id": 311, "title": "Support in Living Organisms", "price": "140 EGP", "isFree": False}, }, "lesson_details": { 31101: {"subject": "3rd Year - Term 1", "duration": "3 hours", "exams": "2 exams", "questions": "90 questions"}, } } } }, "term2": { "arabic": { "biology": { "chapters": { 321: {"title": "الفصل الثالث: التكاثر", "price": "300 جنية"}, 322: {"title": "الفصل الرابع: المناعة", "price": "320 جنية"}, }, "lessons": { 32101: {"chapter_id": 321, "title": "طرق التكاثر", "price": "150 جنية", "isFree": False}, 32201: {"chapter_id": 322, "title": "آليات عمل الجهاز المناعي", "price": "مجانا", "isFree": True}, }, "lesson_details": { 32101: {"subject": "ثالثة ثانوي - ترم ثاني", "duration": "3.5 ساعات", "exams": "2 امتحان", "questions": "100 سؤال"}, 32201: {"subject": "ثالثة ثانوي - ترم ثاني", "duration": "ساعتان", "exams": "1 امتحان", "questions": "50 سؤال"}, } } }, "english": { "biology": { "chapters": { 331: {"title": "Chapter 3: Reproduction", "price": "300 EGP"}, 332: {"title": "Chapter 4: Immunity", "price": "320 EGP"}, }, "lessons": { 33101: {"chapter_id": 331, "title": "Methods of Reproduction", "price": "150 EGP", "isFree": False}, 33201: {"chapter_id": 332, "title": "Immune System Mechanisms", "price": "Free", "isFree": True}, }, "lesson_details": { 33101: {"subject": "3rd Year - Term 2", "duration": "3.5 hours", "exams": "2 exams", "questions": "100 questions"}, 33201: {"subject": "3rd Year - Term 2", "duration": "2 hours", "exams": "1 exam", "questions": "50 questions"}, } } } } }
+    "1": { # Year 1
+        "term1": {
+            "arabic": {
+                "biology": {
+                    "chapters": {
+                        101: {"title": "الفصل الأول: الأساس الكيميائي للحياة", "price": "150 جنية"},
+                        102: {"title": "الفصل الثاني: الخلية", "price": "170 جنية"},
+                    },
+                    "lessons": {
+                        10101: {"chapter_id": 101, "title": "مقدمة أولى ثانوي", "price": "مجانا", "isFree": True},
+                        10102: {"chapter_id": 101, "title": "التركيب الكيميائي", "price": "75 جنية", "isFree": False},
+                        10201: {"chapter_id": 102, "title": "النظرية الخلوية", "price": "85 جنية", "isFree": False},
+                    },
+                    "lesson_details": {
+                        10101: {"subject": "أولى ثانوي - ترم أول", "duration": "ساعة", "exams": "لا يوجد", "questions": "10 أسئلة"},
+                        10102: {"subject": "أولى ثانوي - ترم أول", "duration": "ساعتان", "exams": "1 امتحان", "questions": "30 سؤال"},
+                        10201: {"subject": "أولى ثانوي - ترم أول", "duration": "ساعة ونصف", "exams": "1 امتحان", "questions": "40 سؤال"},
+                    }
+                }
+            },
+            "english": {
+                "biology": {
+                    "chapters": {
+                        111: {"title": "Chapter 1: Chemical Basis of Life", "price": "150 EGP"},
+                        112: {"title": "Chapter 2: The Cell", "price": "170 EGP"},
+                    },
+                    "lessons": {
+                        11101: {"chapter_id": 111, "title": "Intro for 1st Year", "price": "Free", "isFree": True},
+                        11102: {"chapter_id": 111, "title": "Chemical Composition", "price": "75 EGP", "isFree": False},
+                        11201: {"chapter_id": 112, "title": "Cell Theory", "price": "85 EGP", "isFree": False},
+                    },
+                     "lesson_details": {
+                        11101: {"subject": "1st Year - Term 1", "duration": "1 hour", "exams": "None", "questions": "10 questions"},
+                        11102: {"subject": "1st Year - Term 1", "duration": "2 hours", "exams": "1 exam", "questions": "30 questions"},
+                        11201: {"subject": "1st Year - Term 1", "duration": "1.5 hours", "exams": "1 exam", "questions": "40 questions"},
+                    }
+                }
+            }
+        },
+        "term2": { # Year 1, Term 2
+            "arabic": {
+                "biology": {
+                    "chapters": {
+                        121: {"title": "الفصل الثالث: الوراثة", "price": "160 جنية"},
+                    },
+                    "lessons": {
+                        12101: {"chapter_id": 121, "title": "قوانين مندل", "price": "80 جنية", "isFree": False},
+                    },
+                    "lesson_details": {
+                        12101: {"subject": "أولى ثانوي - ترم ثاني", "duration": "ساعتان", "exams": "1 امتحان", "questions": "35 سؤال"},
+                    }
+                }
+            },
+            "english": {
+                 "biology": {
+                    "chapters": {
+                        131: {"title": "Chapter 3: Genetics", "price": "160 EGP"},
+                    },
+                    "lessons": {
+                        13101: {"chapter_id": 131, "title": "Mendel's Laws", "price": "80 EGP", "isFree": False},
+                    },
+                    "lesson_details": {
+                        13101: {"subject": "1st Year - Term 2", "duration": "2 hours", "exams": "1 exam", "questions": "35 questions"},
+                    }
+                }
+            }
+        }
+    },
+    "2": { # Year 2
+        "term1": {
+            "arabic": {
+                "biology": {
+                    "chapters": {
+                        201: {"title": "الفصل الأول: التغذية والهضم", "price": "200 جنية"},
+                        202: {"title": "الفصل الثاني: النقل", "price": "210 جنية"},
+                    },
+                    "lessons": {
+                        20101: {"chapter_id": 201, "title": "التغذية الذاتية", "price": "مجانا", "isFree": True},
+                        20201: {"chapter_id": 202, "title": "النقل في النبات", "price": "105 جنية", "isFree": False},
+                    },
+                    "lesson_details": {
+                        20101: {"subject": "تانية ثانوي - ترم أول", "duration": "ساعة وربع", "exams": "لا يوجد", "questions": "15 سؤال"},
+                        20201: {"subject": "تانية ثانوي - ترم أول", "duration": "ساعتان", "exams": "1 امتحان", "questions": "45 سؤال"},
+                    }
+                }
+            },
+            "english": {
+                "biology": {
+                    "chapters": {
+                        211: {"title": "Chapter 1: Nutrition and Digestion", "price": "200 EGP"},
+                    },
+                    "lessons": {
+                        21101: {"chapter_id": 211, "title": "Autotrophic Nutrition", "price": "Free", "isFree": True},
+                    },
+                    "lesson_details": {
+                        21101: {"subject": "2nd Year - Term 1", "duration": "1.25 hours", "exams": "None", "questions": "15 questions"},
+                    }
+                }
+            }
+        },
+        "term2": { # Year 2, Term 2
+             "arabic": {
+                "biology": {
+                    "chapters": {
+                        221: {"title": "الفصل الثالث: التنفس", "price": "190 جنية"},
+                    },
+                    "lessons": {
+                        22101: {"chapter_id": 221, "title": "التنفس الخلوي", "price": "95 جنية", "isFree": False},
+                    },
+                    "lesson_details": {
+                        22101: {"subject": "تانية ثانوي - ترم ثاني", "duration": "ساعتان", "exams": "1 امتحان", "questions": "50 سؤال"},
+                    }
+                }
+            },
+            "english": {
+                "biology": {
+                    "chapters": {
+                        231: {"title": "Chapter 3: Respiration", "price": "190 EGP"},
+                    },
+                    "lessons": {
+                        23101: {"chapter_id": 231, "title": "Cellular Respiration", "price": "95 EGP", "isFree": False},
+                    },
+                    "lesson_details": {
+                        23101: {"subject": "2nd Year - Term 2", "duration": "2 hours", "exams": "1 exam", "questions": "50 questions"},
+                    }
+                }
+            }
+        }
+    },
+    "3": { # Year 3
+        "term1": {
+            "arabic": {
+                "biology": {
+                    "chapters": {
+                        301: {"title": "الفصل الأول: الدعامة والحركة", "price": "280 جنية"},
+                    },
+                    "lessons": {
+                        30101: {"chapter_id": 301, "title": "الدعامة في الكائنات الحية", "price": "140 جنية", "isFree": False},
+                    },
+                    "lesson_details": {
+                        30101: {"subject": "ثالثة ثانوي - ترم أول", "duration": "3 ساعات", "exams": "2 امتحان", "questions": "90 سؤال"},
+                    }
+                }
+            },
+            "english": {
+                 "biology": {
+                    "chapters": {
+                        311: {"title": "Chapter 1: Support and Movement", "price": "280 EGP"},
+                    },
+                    "lessons": {
+                        31101: {"chapter_id": 311, "title": "Support in Living Organisms", "price": "140 EGP", "isFree": False},
+                    },
+                    "lesson_details": {
+                        31101: {"subject": "3rd Year - Term 1", "duration": "3 hours", "exams": "2 exams", "questions": "90 questions"},
+                    }
+                }
+            }
+        },
+        "term2": {
+            "arabic": {
+                "biology": {
+                    "chapters": {
+                        321: {"title": "الفصل الثالث: التكاثر", "price": "300 جنية"},
+                        322: {"title": "الفصل الرابع: المناعة", "price": "320 جنية"},
+                    },
+                    "lessons": {
+                        32101: {"chapter_id": 321, "title": "طرق التكاثر", "price": "150 جنية", "isFree": False},
+                        32201: {"chapter_id": 322, "title": "آليات عمل الجهاز المناعي", "price": "مجانا", "isFree": True},
+                    },
+                    "lesson_details": {
+                        32101: {"subject": "ثالثة ثانوي - ترم ثاني", "duration": "3.5 ساعات", "exams": "2 امتحان", "questions": "100 سؤال"},
+                        32201: {"subject": "ثالثة ثانوي - ترم ثاني", "duration": "ساعتان", "exams": "1 امتحان", "questions": "50 سؤال"},
+                    }
+                }
+            },
+            "english": {
+                 "biology": {
+                    "chapters": {
+                        331: {"title": "Chapter 3: Reproduction", "price": "300 EGP"},
+                        332: {"title": "Chapter 4: Immunity", "price": "320 EGP"},
+                    },
+                    "lessons": {
+                        33101: {"chapter_id": 331, "title": "Methods of Reproduction", "price": "150 EGP", "isFree": False},
+                        33201: {"chapter_id": 332, "title": "Immune System Mechanisms", "price": "Free", "isFree": True},
+                    },
+                    "lesson_details": {
+                        33101: {"subject": "3rd Year - Term 2", "duration": "3.5 hours", "exams": "2 exams", "questions": "100 questions"},
+                        33201: {"subject": "3rd Year - Term 2", "duration": "2 hours", "exams": "1 exam", "questions": "50 questions"},
+                    }
+                }
+            }
+        }
+    }
 }
+
 
 # --- Helper & Auth Functions ---
 def create_token(data: dict, expires_delta: timedelta):
@@ -91,7 +288,6 @@ async def get_current_student(token: str = Depends(oauth2_scheme), student_colle
     return student
 
 # --- API Endpoints ---
-# All endpoints now depend on the new database connection functions
 @app.get("/")
 def root(): return {"status": "ok"}
 @app.post("/register")
@@ -195,15 +391,18 @@ async def add_receipt(receipt_data: ReceiptCreate, student_collection: AsyncIOMo
 @app.get("/receipts/{student_code}", response_model=List[ReceiptResponse])
 async def get_all_receipts_for_student(student_code: str, receipt_collection: AsyncIOMotorCollection = Depends(get_receipt_collection), _: dict = Depends(get_current_student)):
     receipts_cursor = receipt_collection.find({"student_code": student_code})
-    receipts_list = await receipt_collection.to_list(length=1000)
+    receipts_list = await receipts_cursor.to_list(length=1000)
     for receipt in receipts_list: receipt["_id"] = str(receipt["_id"])
     return receipts_list
+
+# --- EDUCATIONAL CONTENT ENDPOINTS ---
 @app.get("/homepage/{year}/{term}/{language}/{subject}", response_model=List[ChapterSummaryResponse])
 async def get_homepage_chapters(year: str, term: str, language: str, subject: str):
     try:
         content = EDUCATIONAL_CONTENT[year][term][language][subject]
         chapters_data = content.get("chapters", {})
-    except KeyError: return []
+    except KeyError:
+        return [] # Return empty list if content is not found
     response = [ChapterSummaryResponse(id=cid, image=courseImg, variant="chapter", **cdata) for cid, cdata in chapters_data.items()]
     return response
 @app.get("/chapters/{chapter_id}", response_model=List[LessonSummaryResponse])
@@ -240,7 +439,14 @@ async def get_test_frontend():
     </head><body><div class="container"><h1>API Tester</h1><div><h2>Tokens</h2><label>Access Token:</label><br><input type="text" id="accessToken" style="width:100%;"></div>
     
     <h2>Educational Content</h2>
-    <form id="contentForm"><h3>Get Homepage Chapters</h3><select id="year"><option value="1">1st Year</option><option value="2">2nd Year</option><option value="3">3rd Year</option></select><select id="term"><option value="term1">Term 1</option><option value="term2">Term 2</option></select><select id="language"><option value="arabic">Arabic</option><option value="english">English</option></select><select id="subject"><option value="biology">Biology</option></select><button type="submit">Get Chapters</button></form>
+    <form id="contentForm">
+        <h3>Get Homepage Chapters</h3>
+        <select id="year"><option value="1">1st Year</option><option value="2">2nd Year</option><option value="3">3rd Year</option></select>
+        <select id="term"><option value="term1">Term 1</option><option value="term2">Term 2</option></select>
+        <select id="language"><option value="arabic">Arabic</option><option value="english">English</option></select>
+        <select id="subject"><option value="biology">Biology</option></select>
+        <button type="submit">Get Chapters</button>
+    </form>
     <form id="chapterForm"><h3>Get Lessons in a Chapter</h3><input type="number" id="chapterId" placeholder="Chapter ID (e.g., 101, 211, 321)"><button type="submit">Get Lessons</button></form>
     <form id="lessonForm"><h3>Get Lesson Details</h3><input type="number" id="lessonId" placeholder="Lesson ID (e.g., 10101, 22101, 33101)"><button type="submit">Get Details</button></form>
 
@@ -260,6 +466,7 @@ async def get_test_frontend():
         const responseOutput = document.getElementById('responseOutput');
         const accessTokenInput = document.getElementById('accessToken');
         const resetTokenInput = document.getElementById('resetToken');
+
         const apiCall = async (endpoint, method = 'GET', body = null) => {
             const headers = { 'Content-Type': 'application/json' };
             if (accessTokenInput.value) { headers['Authorization'] = `Bearer ${accessTokenInput.value}`; }
@@ -273,9 +480,13 @@ async def get_test_frontend():
                 if (data.reset_token) { resetTokenInput.value = data.reset_token; }
             } catch (error) { responseOutput.textContent = `Error: ${error.message}`; }
         };
-        document.getElementById('contentForm').addEventListener('submit', e => { e.preventDefault(); const y = document.getElementById('year').value; const t = document.getElementById('term').value; const l = document.getElementById('language').value; const s = document.getElementById('subject').value; apiCall(`/homepage/${y}/${t}/${l}/${s}`, 'GET'); });
-        document.getElementById('chapterForm').addEventListener('submit', e => { e.preventDefault(); const c = document.getElementById('chapterId').value; if (c) apiCall(`/chapters/${c}`, 'GET'); });
-        document.getElementById('lessonForm').addEventListener('submit', e => { e.preventDefault(); const l = document.getElementById('lessonId').value; if (l) apiCall(`/lessons/${l}`, 'GET'); });
+        
+        // Content Listeners
+        document.getElementById('contentForm').addEventListener('submit', e => { e.preventDefault(); const year = document.getElementById('year').value; const term = document.getElementById('term').value; const language = document.getElementById('language').value; const subject = document.getElementById('subject').value; apiCall(`/homepage/${year}/${term}/${language}/${subject}`, 'GET'); });
+        document.getElementById('chapterForm').addEventListener('submit', e => { e.preventDefault(); const chapterId = document.getElementById('chapterId').value; if (chapterId) apiCall(`/chapters/${chapterId}`, 'GET'); });
+        document.getElementById('lessonForm').addEventListener('submit', e => { e.preventDefault(); const lessonId = document.getElementById('lessonId').value; if (lessonId) apiCall(`/lessons/${lessonId}`, 'GET'); });
+        
+        // User & Auth Listeners
         document.getElementById('registerForm').addEventListener('submit', e => { e.preventDefault(); apiCall('/register', 'POST', { email: document.getElementById('regEmail').value, password: document.getElementById('regPassword').value, confirm_password: document.getElementById('regConfirmPassword').value, name: document.getElementById('regName').value, phone: document.getElementById('regPhone').value, parent_phone: document.getElementById('regParentPhone').value, city: document.getElementById('regCity').value, grade: document.getElementById('regGrade').value, lang: document.getElementById('regLang').value, }); });
         document.getElementById('loginForm').addEventListener('submit', e => { e.preventDefault(); apiCall('/login', 'POST', { identifier: document.getElementById('loginIdentifier').value, password: document.getElementById('loginPassword').value, }); });
         document.getElementById('forgotPasswordForm').addEventListener('submit', e => { e.preventDefault(); apiCall('/forgot-password', 'POST', { email: document.getElementById('forgotEmail').value }); });
@@ -284,8 +495,10 @@ async def get_test_frontend():
         document.getElementById('getProfileBtn').addEventListener('click', () => apiCall('/student/profile', 'GET'));
         document.getElementById('refreshTokenBtn').addEventListener('click', () => apiCall('/token/refresh', 'POST'));
         document.getElementById('logoutBtn').addEventListener('click', () => { apiCall('/logout', 'POST'); accessTokenInput.value = ''; });
+        
+        // Receipt Listeners
         document.getElementById('addReceiptForm').addEventListener('submit', e => { e.preventDefault(); apiCall('/receipts', 'POST', { student_code: document.getElementById('receiptStudentCode').value, receipt_type: document.getElementById('receiptType').value, item_id: document.getElementById('itemId').value, amount: parseFloat(document.getElementById('receiptAmount').value), description: document.getElementById('receiptDesc').value, }); });
-        document.getElementById('getReceiptsForm').addEventListener('submit', e => { e.preventDefault(); const s = document.getElementById('getReceiptsStudentCode').value; if(s) apiCall(`/receipts/${s}`, 'GET'); });
+        document.getElementById('getReceiptsForm').addEventListener('submit', e => { e.preventDefault(); const studentCode = document.getElementById('getReceiptsStudentCode').value; if(studentCode) apiCall(`/receipts/${studentCode}`, 'GET'); });
     </script>
     </body></html>
     """
