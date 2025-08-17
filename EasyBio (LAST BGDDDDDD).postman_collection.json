@@ -1,0 +1,1316 @@
+{
+	"info": {
+		"_postman_id": "a3104083-4a42-42db-aa64-fce42ce0dae8",
+		"name": "EasyBio (LAST BGDDDDDD)",
+		"description": "The complete and final Postman collection for the EasyBio FastAPI backend. Includes all endpoints for authentication, content, the student dashboard, and the new Parent Portal. Ready for frontend and mobile app integration.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "24141573",
+		"_collection_link": "https://pplo77.postman.co/workspace/1b1552b0-b685-4696-ba7d-2157abc88f8f/collection/24141573-a3104083-4a42-42db-aa64-fce42ce0dae8?action=share&source=collection_link&creator=24141573"
+	},
+	"item": [
+		{
+			"name": "User & Auth",
+			"item": [
+				{
+					"name": "Register Student",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"Fatima Ahmed\",\n    \"phone\": \"01234567891\",\n    \"email\": \"fatima.ahmed@example.com\",\n    \"parent_phone\": \"01198765432\",\n    \"city\": \"Cairo\",\n    \"grade\": \"12\",\n    \"lang\": \"ar\",\n    \"password\": \"strongPassword123!\",\n    \"confirm_password\": \"strongPassword123!\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/register",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"register"
+							]
+						}
+					},
+					"response": [
+						{
+							"name": "Success (200)",
+							"originalRequest": {
+								"method": "POST",
+								"header": [],
+								"body": {
+									"mode": "raw",
+									"raw": "{...}"
+								},
+								"url": {
+									"raw": "{{baseUrl}}/register",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"register"
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [],
+							"cookie": [],
+							"body": "{\n    \"message\": \"Registered successfully. Please login.\"\n}"
+						}
+					]
+				},
+				{
+					"name": "Login",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    var jsonData = pm.response.json();",
+									"    pm.environment.set(\"access_token\", jsonData.access_token);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"identifier\": \"fatima.ahmed@example.com\",\n    \"password\": \"strongPassword123!\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/login",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"login"
+							]
+						}
+					},
+					"response": [
+						{
+							"name": "Success (200)",
+							"originalRequest": {
+								"method": "POST",
+								"header": [],
+								"body": {
+									"mode": "raw",
+									"raw": "{...}"
+								},
+								"url": {
+									"raw": "{{baseUrl}}/login",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"login"
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [],
+							"cookie": [],
+							"body": "{\n    \"access_token\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI2ODlmNj...\",\n    \"refresh_token\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI2ODlmNj...\",\n    \"token_type\": \"bearer\"\n}"
+						}
+					]
+				},
+				{
+					"name": "Logout",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{access_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/logout",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"logout"
+							]
+						}
+					},
+					"response": [
+						{
+							"name": "Success (200)",
+							"originalRequest": {
+								"method": "POST",
+								"header": [],
+								"url": {
+									"raw": "{{baseUrl}}/logout",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"logout"
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [],
+							"cookie": [],
+							"body": "{\n    \"message\": \"Successfully logged out\"\n}"
+						}
+					]
+				},
+				{
+					"name": "Refresh Token",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/token/refresh",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"token",
+								"refresh"
+							]
+						}
+					},
+					"response": [
+						{
+							"name": "Success (200)",
+							"originalRequest": {
+								"method": "POST",
+								"header": [],
+								"url": {
+									"raw": "{{baseUrl}}/token/refresh",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"token",
+										"refresh"
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [],
+							"cookie": [],
+							"body": "{\n    \"access_token\": \"a_new_access_token...\",\n    \"refresh_token\": \"a_new_refresh_token...\",\n    \"token_type\": \"bearer\"\n}"
+						}
+					]
+				}
+			],
+			"description": "Endpoints for student registration, login, and session management."
+		},
+		{
+			"name": "Password Reset",
+			"item": [
+				{
+					"name": "1. Forgot Password (Request Code)",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"fatima.ahmed@example.com\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/forgot-password",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"forgot-password"
+							]
+						}
+					},
+					"response": [
+						{
+							"name": "Success (200)",
+							"originalRequest": {
+								"method": "POST",
+								"header": [],
+								"body": {
+									"mode": "raw",
+									"raw": "{...}"
+								},
+								"url": {
+									"raw": "{{baseUrl}}/forgot-password",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"forgot-password"
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [],
+							"cookie": [],
+							"body": "{\n    \"message\": \"A password reset code has been sent to your email.\"\n}"
+						}
+					]
+				},
+				{
+					"name": "2. Verify Reset Code",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    var jsonData = pm.response.json();",
+									"    pm.environment.set(\"reset_token\", jsonData.reset_token);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"fatima.ahmed@example.com\",\n    \"code\": \"12345\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/verify-reset-code",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"verify-reset-code"
+							]
+						}
+					},
+					"response": [
+						{
+							"name": "Success (200)",
+							"originalRequest": {
+								"method": "POST",
+								"header": [],
+								"body": {
+									"mode": "raw",
+									"raw": "{...}"
+								},
+								"url": {
+									"raw": "{{baseUrl}}/verify-reset-code",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"verify-reset-code"
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [],
+							"cookie": [],
+							"body": "{\n    \"message\": \"Code verified.\",\n    \"reset_token\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJmYXRpbWEuYW...\"\n}"
+						}
+					]
+				},
+				{
+					"name": "3. Reset Password",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"token\": \"{{reset_token}}\",\n    \"new_password\": \"myNewSecurePassword456!\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/reset-password",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"reset-password"
+							]
+						}
+					},
+					"response": [
+						{
+							"name": "Success (200)",
+							"originalRequest": {
+								"method": "POST",
+								"header": [],
+								"body": {
+									"mode": "raw",
+									"raw": "{...}"
+								},
+								"url": {
+									"raw": "{{baseUrl}}/reset-password",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"reset-password"
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [],
+							"cookie": [],
+							"body": "{\n    \"message\": \"Password reset successfully.\"\n}"
+						}
+					]
+				}
+			],
+			"description": "A three-step process to securely reset a student's password."
+		},
+		{
+			"name": "Student Profile",
+			"item": [
+				{
+					"name": "Get My Profile",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{access_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/student/profile",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"student",
+								"profile"
+							]
+						}
+					},
+					"response": [
+						{
+							"name": "Success (200)",
+							"originalRequest": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{baseUrl}}/student/profile",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"student",
+										"profile"
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [],
+							"cookie": [],
+							"body": "{\n    \"student_code\": \"ABC123XYZ\",\n    \"name\": \"Fatima Ahmed\",\n    \"phone\": \"01234567891\",\n    \"email\": \"fatima.ahmed@example.com\",\n    \"parent_phone\": \"01198765432\",\n    \"city\": \"Cairo\",\n    \"grade\": \"12\",\n    \"password\": \"****\"\n}"
+						}
+					]
+				},
+				{
+					"name": "Edit My Profile",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{access_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"Fatima A. Hassan\",\n    \"city\": \"Giza\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/student/profile/edit",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"student",
+								"profile",
+								"edit"
+							]
+						}
+					},
+					"response": [
+						{
+							"name": "Success (200)",
+							"originalRequest": {
+								"method": "PUT",
+								"header": [],
+								"body": {
+									"mode": "raw",
+									"raw": "{...}"
+								},
+								"url": {
+									"raw": "{{baseUrl}}/student/profile/edit",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"student",
+										"profile",
+										"edit"
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [],
+							"cookie": [],
+							"body": "{\n    \"message\": \"Profile updated\",\n    \"student\": {\n        \"student_code\": \"ABC123XYZ\",\n        \"name\": \"Fatima A. Hassan\",\n        \"phone\": \"01234567891\",\n        \"email\": \"fatima.ahmed@example.com\",\n        \"parent_phone\": \"01198765432\",\n        \"city\": \"Giza\",\n        \"grade\": \"12\"\n    }\n}"
+						}
+					]
+				}
+			],
+			"description": "Endpoints to manage the authenticated student's profile data."
+		},
+		{
+			"name": "Educational Content (Public)",
+			"item": [
+				{
+					"name": "Get Homepage Chapters (All/Free/Paid)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/homepage/1/term1/arabic/biology",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"homepage",
+								"1",
+								"term1",
+								"arabic",
+								"biology"
+							]
+						}
+					},
+					"response": [
+						{
+							"name": "Success (200) - All Chapters",
+							"originalRequest": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{baseUrl}}/homepage/1/term1/arabic/biology",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"homepage",
+										"1",
+										"term1",
+										"arabic",
+										"biology"
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [],
+							"cookie": [],
+							"body": "[\n    {\n        \"id\": 101,\n        \"image\": \"https://via.placeholder.com/200\",\n        \"title\": \"الفصل الأول: الأساس الكيميائي للحياة\",\n        \"price\": \"150 جنية\",\n        \"variant\": \"chapter\"\n    },\n    {\n        \"id\": 102,\n        \"image\": \"https://via.placeholder.com/200\",\n        \"title\": \"الفصل الثاني: الخلية\",\n        \"price\": \"170 جنية\",\n        \"variant\": \"chapter\"\n    }\n]"
+						}
+					]
+				},
+				{
+					"name": "Get Chapter Lessons",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/chapters/101",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"chapters",
+								"101"
+							]
+						}
+					},
+					"response": [
+						{
+							"name": "Success (200)",
+							"originalRequest": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{baseUrl}}/chapters/101",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"chapters",
+										"101"
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [],
+							"cookie": [],
+							"body": "[\n    {\n        \"id\": 10101,\n        \"image\": \"https://via.placeholder.com/200\",\n        \"title\": \"مقدمة أولى ثانوي\",\n        \"price\": \"مجانا\",\n        \"isFree\": true\n    },\n    {\n        \"id\": 10102,\n        \"image\": \"https://via.placeholder.com/200\",\n        \"title\": \"التركيب الكيميائي\",\n        \"price\": \"75 جنية\",\n        \"isFree\": false\n    }\n]"
+						}
+					]
+				},
+				{
+					"name": "Get Lesson Details",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/lessons/10101",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"lessons",
+								"10101"
+							]
+						}
+					},
+					"response": [
+						{
+							"name": "Success (200)",
+							"originalRequest": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{baseUrl}}/lessons/10101",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"lessons",
+										"10101"
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [],
+							"cookie": [],
+							"body": "{\n    \"id\": 10101,\n    \"image\": \"https://via.placeholder.com/200\",\n    \"title\": \"مقدمة أولى ثانوي\",\n    \"subject\": \"أولى ثانوي - ترم أول\",\n    \"price\": \"مجانا\",\n    \"duration\": \"ساعة\",\n    \"exams\": \"لا يوجد\",\n    \"questions\": \"10 أسئلة\",\n    \"isFree\": true\n}"
+						}
+					]
+				},
+				{
+					"name": "Get Books",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/books",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"books"
+							]
+						}
+					},
+					"response": [
+						{
+							"name": "Success (200)",
+							"originalRequest": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{baseUrl}}/books",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"books"
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [],
+							"cookie": [],
+							"body": "[\n    {\n        \"id\": 1,\n        \"title\": \"ملزمة المناعة والتكاثر\",\n        \"price\": \"50 جنية\",\n        \"image\": \"https://via.placeholder.com/150x200\"\n    }\n]"
+						}
+					]
+				}
+			],
+			"description": "Publicly accessible endpoints to browse available courses, lessons, and books."
+		},
+		{
+			"name": "Student Dashboard (Protected)",
+			"item": [
+				{
+					"name": "Buy an Item (e.g., Chapter)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{access_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"item_id\": \"101\",\n    \"item_type\": \"chapter\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/dashboard/buy-item",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"dashboard",
+								"buy-item"
+							]
+						}
+					},
+					"response": [
+						{
+							"name": "Success (200)",
+							"originalRequest": {
+								"method": "POST",
+								"header": [],
+								"body": {
+									"mode": "raw",
+									"raw": "{...}"
+								},
+								"url": {
+									"raw": "{{baseUrl}}/dashboard/buy-item",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"dashboard",
+										"buy-item"
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [],
+							"cookie": [],
+							"body": "{\n    \"_id\": \"68a0c2e3f4b5c6d7e8f9a0b1\",\n    \"student_id\": \"68a0c1a2b3c4d5e6f7a8b9c0\",\n    \"student_code\": \"ABC123XYZ\",\n    \"receipt_type\": \"package_purchase\",\n    \"item_id\": \"101\",\n    \"amount\": 150.0,\n    \"description\": \"Purchase of chapter: الفصل الأول: الأساس الكيميائي للحياة\",\n    \"created_at\": \"2025-08-18T00:00:00Z\"\n}"
+						}
+					]
+				},
+				{
+					"name": "Get My Purchased Chapters",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{access_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/dashboard/my-chapters",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"dashboard",
+								"my-chapters"
+							]
+						}
+					},
+					"response": [
+						{
+							"name": "Success (200)",
+							"originalRequest": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{baseUrl}}/dashboard/my-chapters",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"dashboard",
+										"my-chapters"
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [],
+							"cookie": [],
+							"body": "[\n    {\n        \"id\": 101,\n        \"image\": \"https://via.placeholder.com/200\",\n        \"title\": \"الفصل الأول: الأساس الكيميائي للحياة\",\n        \"price\": \"150 جنية\",\n        \"variant\": \"chapter\"\n    }\n]"
+						}
+					]
+				},
+				{
+					"name": "Add a Test Result",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{access_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"test_name\": \"Quiz on The Cell\",\n    \"score\": \"95%\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/dashboard/add-test-result",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"dashboard",
+								"add-test-result"
+							]
+						}
+					},
+					"response": [
+						{
+							"name": "Success (200)",
+							"originalRequest": {
+								"method": "POST",
+								"header": [],
+								"body": {
+									"mode": "raw",
+									"raw": "{...}"
+								},
+								"url": {
+									"raw": "{{baseUrl}}/dashboard/add-test-result",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"dashboard",
+										"add-test-result"
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [],
+							"cookie": [],
+							"body": "{\n    \"id\": 1,\n    \"test_name\": \"Quiz on The Cell\",\n    \"score\": \"95%\",\n    \"date_taken\": \"2025-08-18\",\n    \"review_link\": \"/api/tests/review/1\",\n    \"download_link\": \"/api/tests/download/1\"\n}"
+						}
+					]
+				},
+				{
+					"name": "Get My Test Results",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{access_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/dashboard/my-tests",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"dashboard",
+								"my-tests"
+							]
+						}
+					},
+					"response": [
+						{
+							"name": "Success (200)",
+							"originalRequest": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{baseUrl}}/dashboard/my-tests",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"dashboard",
+										"my-tests"
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [],
+							"cookie": [],
+							"body": "[\n    {\n        \"id\": 1,\n        \"test_name\": \"Quiz on The Cell\",\n        \"score\": \"95%\",\n        \"date_taken\": \"2025-08-18\",\n        \"review_link\": \"/api/tests/review/1\",\n        \"download_link\": \"/api/tests/download/1\"\n    }\n]"
+						}
+					]
+				},
+				{
+					"name": "Add Video to Favorites",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{access_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"video_id\": 2\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/dashboard/favorites/add",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"dashboard",
+								"favorites",
+								"add"
+							]
+						}
+					},
+					"response": [
+						{
+							"name": "Success (201)",
+							"originalRequest": {
+								"method": "POST",
+								"header": [],
+								"body": {
+									"mode": "raw",
+									"raw": "{...}"
+								},
+								"url": {
+									"raw": "{{baseUrl}}/dashboard/favorites/add",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"dashboard",
+										"favorites",
+										"add"
+									]
+								}
+							},
+							"status": "Created",
+							"code": 201,
+							"_postman_previewlanguage": "json",
+							"header": [],
+							"cookie": [],
+							"body": "{\n    \"message\": \"Video added to favorites.\"\n}"
+						}
+					]
+				},
+				{
+					"name": "Get My Favorite Videos",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{access_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/dashboard/favorites",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"dashboard",
+								"favorites"
+							]
+						}
+					},
+					"response": [
+						{
+							"name": "Success (200)",
+							"originalRequest": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{baseUrl}}/dashboard/favorites",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"dashboard",
+										"favorites"
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [],
+							"cookie": [],
+							"body": "[\n    {\n        \"id\": 2,\n        \"title\": \"Lesson 1.2: The Scientific Method\",\n        \"thumbnail_url\": \"/thumbs/2.jpg\",\n        \"video_url\": \"/videos/2.mp4\"\n    }\n]"
+						}
+					]
+				}
+			],
+			"description": "Endpoints for the logged-in student's personal dashboard. Requires Bearer Token authentication."
+		},
+		{
+			"name": "Receipts (Admin)",
+			"item": [
+				{
+					"name": "Add Receipt for a Student",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{access_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"student_code\": \"ABC123XYZ\",\n    \"receipt_type\": \"balance_charge\",\n    \"item_id\": \"VFC-CHARGE-100\",\n    \"amount\": 100,\n    \"description\": \"Balance top-up via Vodafone Cash\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/receipts",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"receipts"
+							]
+						}
+					},
+					"response": [
+						{
+							"name": "Success (200)",
+							"originalRequest": {
+								"method": "POST",
+								"header": [],
+								"body": {
+									"mode": "raw",
+									"raw": "{...}"
+								},
+								"url": {
+									"raw": "{{baseUrl}}/receipts",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"receipts"
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [],
+							"cookie": [],
+							"body": "{\n    \"_id\": \"68a0c3a4b5c6d7e8f9a0b2c3\",\n    \"student_id\": \"68a0c1a2b3c4d5e6f7a8b9c0\",\n    \"student_code\": \"ABC123XYZ\",\n    \"receipt_type\": \"balance_charge\",\n    \"item_id\": \"VFC-CHARGE-100\",\n    \"amount\": 100.0,\n    \"description\": \"Balance top-up via Vodafone Cash\",\n    \"created_at\": \"2025-08-18T00:10:00Z\"\n}"
+						}
+					]
+				},
+				{
+					"name": "Get Receipts for a Student",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{access_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/receipts/ABC123XYZ",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"receipts",
+								"ABC123XYZ"
+							]
+						}
+					},
+					"response": [
+						{
+							"name": "Success (200)",
+							"originalRequest": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{baseUrl}}/receipts/ABC123XYZ",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"receipts",
+										"ABC123XYZ"
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [],
+							"cookie": [],
+							"body": "[\n    {\n        \"_id\": \"68a0c2e3f4b5c6d7e8f9a0b1\",\n        \"student_id\": \"68a0c1a2b3c4d5e6f7a8b9c0\",\n        \"student_code\": \"ABC123XYZ\",\n        \"receipt_type\": \"package_purchase\",\n        \"item_id\": \"101\",\n        \"amount\": 150.0,\n        \"description\": \"Purchase of chapter: الفصل الأول: الأساس الكيميائي للحياة\",\n        \"created_at\": \"2025-08-18T00:00:00Z\"\n    }\n]"
+						}
+					]
+				}
+			],
+			"description": "Endpoints for managing student receipts. Protected."
+		},
+		{
+			"name": "Parent Portal",
+			"item": [
+				{
+					"name": "Get Student Dashboard (for Parent)",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"student_phone\": \"0101122334455\",\n    \"parent_phone\": \"01166778899\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/parent/dashboard",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"parent",
+								"dashboard"
+							]
+						}
+					},
+					"response": [
+						{
+							"name": "Success (200)",
+							"originalRequest": {
+								"method": "POST",
+								"header": [],
+								"body": {
+									"mode": "raw",
+									"raw": "{...}"
+								},
+								"url": {
+									"raw": "{{baseUrl}}/parent/dashboard",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"parent",
+										"dashboard"
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [],
+							"cookie": [],
+							"body": "{\n    \"student_info\": {\n        \"student_code\": \"XYZ789ABC\",\n        \"name\": \"Test User\",\n        \"phone\": \"0101122334455\",\n        \"email\": \"user-test@example.com\",\n        \"parent_phone\": \"01166778899\",\n        \"city\": \"Cairo\",\n        \"grade\": \"12\",\n        \"password\": \"****\"\n    },\n    \"purchased_chapters\": [\n        {\n            \"id\": 101,\n            \"image\": \"https://via.placeholder.com/200\",\n            \"title\": \"الفصل الأول: الأساس الكيميائي للحياة\",\n            \"price\": \"150 جنية\",\n            \"variant\": \"chapter\"\n        }\n    ],\n    \"test_results\": [\n        {\n            \"id\": 1,\n            \"test_name\": \"Final Exam Practice\",\n            \"score\": \"88%\",\n            \"date_taken\": \"2025-08-18\",\n            \"review_link\": \"/api/tests/review/1\",\n            \"download_link\": \"/api/tests/download/1\"\n        }\n    ]\n}"
+						},
+						{
+							"name": "Not Found (404)",
+							"originalRequest": {
+								"method": "POST",
+								"header": [],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n    \"student_phone\": \"01000000000\",\n    \"parent_phone\": \"01100000000\"\n}"
+								},
+								"url": {
+									"raw": "{{baseUrl}}/parent/dashboard",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"parent",
+										"dashboard"
+									]
+								}
+							},
+							"status": "Not Found",
+							"code": 404,
+							"_postman_previewlanguage": "json",
+							"header": [],
+							"cookie": [],
+							"body": "{\n    \"detail\": \"No matching student found for the provided phone numbers.\"\n}"
+						}
+					]
+				}
+			],
+			"description": "A dedicated endpoint for parents to view their child's comprehensive dashboard."
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"packages": {},
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"packages": {},
+				"exec": [
+					""
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "https://web-production-8b5ee.up.railway.app/"
+		},
+		{
+			"key": "access_token",
+			"value": ""
+		},
+		{
+			"key": "reset_token",
+			"value": ""
+		}
+	]
+}
