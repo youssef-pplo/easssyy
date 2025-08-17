@@ -29,7 +29,9 @@ from schemas import (
     ForgotPasswordRequest, VerifyResetCodeRequest, ResetPasswordRequest,
     ChapterSummaryResponse, LessonSummaryResponse, LessonDetailResponse,
     BookResponse, ItemPurchaseRequest, TestResultResponse,
-    AddTestResultRequest, VideoResponse, FavoriteVideoRequest
+    AddTestResultRequest, VideoResponse, FavoriteVideoRequest,
+    ParentLoginRequest, ParentDashboardResponse
+    
 
 
 )
@@ -785,6 +787,61 @@ async def get_my_favorite_videos(
     
     return favorite_videos
 
+# --- PARENT PORTAL ENDPOINT ---
+
+@app.post("/parent/dashboard", response_model=ParentDashboardResponse)
+async def get_parent_dashboard(
+    login_data: ParentLoginRequest,
+    student_collection: AsyncIOMotorCollection = Depends(get_student_collection),
+    receipt_collection: AsyncIOMotorCollection = Depends(get_receipt_collection)
+):
+    """
+    Provides a comprehensive dashboard for a parent by verifying
+    the student's phone and parent's phone number.
+    """
+    # 1. Find the student using both phone numbers for verification
+    student = await student_collection.find_one({
+        "phone": login_data.student_phone,
+        "parent_phone": login_data.parent_phone
+    })
+
+    if not student:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No matching student found for the provided phone numbers."
+        )
+
+    student_code = student.get("student_code")
+
+    # 2. Get the student's test results
+    # In a real app, you would query your database for test results.
+    test_results = MOCK_TEST_RESULTS.get(student_code, [])
+
+    # 3. Get the student's purchased chapters
+    receipts_cursor = receipt_collection.find({
+        "student_code": student_code,
+        "receipt_type": "package_purchase"
+    })
+    receipts = await receipts_cursor.to_list(length=1000)
+    purchased_item_ids = {int(r["item_id"]) for r in receipts}
+
+    purchased_chapters = []
+    for year in EDUCATIONAL_CONTENT.values():
+        for term in year.values():
+            for language in term.values():
+                for subject in language.values():
+                    for cid, cdata in subject.get("chapters", {}).items():
+                        if cid in purchased_item_ids:
+                            purchased_chapters.append(
+                                ChapterSummaryResponse(id=cid, image=courseImg, variant="chapter", **cdata)
+                            )
+    
+    # 4. Assemble and return the complete dashboard response
+    return ParentDashboardResponse(
+        student_info=StudentProfileResponse(**student),
+        purchased_chapters=purchased_chapters,
+        test_results=test_results
+    )
 
 # --- TESTING PAGE ---
 @app.get("/try", response_class=HTMLResponse)
@@ -818,6 +875,14 @@ async def get_test_frontend():
             <label>Access Token:</label><br>
             <input type="text" id="accessToken" style="width: 100%;">
         </div>
+        
+        <h2>👪 Parent Portal</h2>
+        <form id="parentLoginForm">
+            <h3>Get Student Dashboard</h3>
+            <input type="text" id="studentPhone" placeholder="Student Phone Number" value="0101122334455">
+            <input type="text" id="parentPhone" placeholder="Parent Phone Number" value="01166778899">
+            <button type="submit">Login as Parent</button>
+        </form>
 
         <h2>📚 Educational Content</h2>
         <form id="contentForm">
@@ -945,7 +1010,7 @@ async def get_test_frontend():
 
         const apiCall = async (endpoint, method = 'GET', body = null) => {
             const headers = { 'Content-Type': 'application/json' };
-            if (accessTokenInput.value) {
+            if (accessTokenInput.value && !endpoint.startsWith('/parent')) { // Don't send token for parent login
                 headers['Authorization'] = `Bearer ${accessTokenInput.value}`;
             }
             try {
@@ -972,6 +1037,9 @@ async def get_test_frontend():
             const subject = document.getElementById('subject').value;
             return `/homepage/${year}/${term}/${language}/${subject}`;
         };
+
+        // Parent Listener
+        document.getElementById('parentLoginForm').addEventListener('submit', e => { e.preventDefault(); apiCall('/parent/dashboard', 'POST', { student_phone: document.getElementById('studentPhone').value, parent_phone: document.getElementById('parentPhone').value }); });
 
         // Content Listeners
         document.getElementById('contentForm').addEventListener('submit', e => { e.preventDefault(); apiCall(getContentPath(), 'GET'); });

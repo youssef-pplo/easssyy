@@ -143,3 +143,12 @@ class VideoResponse(BaseModel):
 
 class FavoriteVideoRequest(BaseModel):
     video_id: int
+
+class ParentLoginRequest(BaseModel):
+    student_phone: str
+    parent_phone: str
+
+class ParentDashboardResponse(BaseModel):
+    student_info: StudentProfileResponse
+    purchased_chapters: List[ChapterSummaryResponse]
+    test_results: List[TestResultResponse]

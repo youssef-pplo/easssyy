@@ -64,11 +64,8 @@ async def get_password_reset_collection():
     if index_name not in await collection.index_information():
         await collection.create_index("expire_at", expireAfterSeconds=0)
     return collection
-<<<<<<< HEAD
 
 async def get_favorite_videos_collection():
     database = await get_database()
     return database.get_collection("favorite_videos")
 
-=======
->>>>>>> 5396182774dbeafb324b65c36b0482c12160f464
