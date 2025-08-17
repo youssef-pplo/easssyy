@@ -110,3 +110,36 @@ class LessonDetailResponse(BaseModel):
     exams: str
     questions: str
     isFree: bool
+
+# 4. Schema for Books
+class BookResponse(BaseModel):
+    id: int
+    title: str
+    price: str
+    image: str
+
+
+class ItemPurchaseRequest(BaseModel):
+    item_id: str
+    item_type: str = Field(..., description="Type of item being purchased, e.g., 'chapter'")
+
+class TestResultResponse(BaseModel):
+    id: int
+    test_name: str
+    score: str
+    date_taken: str
+    review_link: str
+    download_link: str
+
+class AddTestResultRequest(BaseModel):
+    test_name: str
+    score: str
+
+class VideoResponse(BaseModel):
+    id: int
+    title: str
+    thumbnail_url: str
+    video_url: str
+
+class FavoriteVideoRequest(BaseModel):
+    video_id: int
