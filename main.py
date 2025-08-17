@@ -377,11 +377,8 @@ async def register(data: RegisterRequest, students: AsyncIOMotorCollection = Dep
 @app.post("/login", response_model=RefreshTokenResponse)
 async def login(response: Response, data: LoginRequest, students: AsyncIOMotorCollection = Depends(get_student_collection)):
     student = await students.find_one({"$or": [{"phone": data.identifier}, {"email": data.identifier}, {"student_code": data.identifier}]})
-    if not student or not verify_password(data.password, student["password"]):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
-    if len(student.get("active_refresh_tokens", [])) >= 100:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Max devices reached.")
-
+    if not student or not verify_password(data.password, student["password"]): raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid credentials")
+    if len(student.get("active_refresh_tokens", [])) >= 3: raise HTTPException(status.HTTP_403_FORBIDDEN, "Max devices reached.")
     student_id = str(student["_id"])
     access_token = create_access_token(student_id)
     refresh_token, refresh_expire = create_refresh_token(student_id)
