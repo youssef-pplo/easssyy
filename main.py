@@ -416,6 +416,7 @@ async def login(response: Response, data: LoginRequest, students: AsyncIOMotorCo
 
 ############ LOGOUT ################
 
+
 @app.post("/logout")
 async def logout(response: Response, request: Request, student_collection: AsyncIOMotorCollection = Depends(get_student_collection), blacklist: AsyncIOMotorCollection = Depends(get_token_blacklist_collection)):
     refresh_token = request.cookies.get("refresh_token")
@@ -425,9 +426,12 @@ async def logout(response: Response, request: Request, student_collection: Async
     if payload and (student_id := payload.get("sub")):
         await student_collection.update_one({"_id": ObjectId(student_id)}, {"$pull": {"active_refresh_tokens": refresh_token}})
         expire_time = datetime.fromtimestamp(payload.get("exp"), tz=timezone.utc)
-        await blacklist.insert_one({"token": refresh_token, "expire_at": expire_time}) # This line is indented
+        await blacklist.insert_one({"token": refresh_token, "expire_at": expire_time})
     response.delete_cookie("refresh_token")
     return {"message": "Successfully logged out"}
+
+
+
 
 ########### LOGIN #######
 @app.post("/login", response_model=RefreshTokenResponse)
