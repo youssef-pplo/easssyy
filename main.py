@@ -467,10 +467,23 @@ async def login(response: Response, data: LoginRequest, students: AsyncIOMotorCo
         "refresh_token": refresh_token,
         "data": student_info
     }
-me.fromtimestamp(payload.get("exp"), tz=timezone.utc)
+
+
+# ... other code
+@app.post("/logout")
+async def logout(response: Response, request: Request, student_collection: AsyncIOMotorCollection = Depends(get_student_collection), blacklist: AsyncIOMotorCollection = Depends(get_token_blacklist_collection)):
+    refresh_token = request.cookies.get("refresh_token")
+    if not refresh_token:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "No active session.")
+    payload = decode_token(refresh_token)
+    if payload and (student_id := payload.get("sub")):
+        # This block needs to have consistent indentation
+        await student_collection.update_one({"_id": ObjectId(student_id)}, {"$pull": {"active_refresh_tokens": refresh_token}})
+        expire_time = datetime.fromtimestamp(payload.get("exp"), tz=timezone.utc)
         await blacklist.insert_one({"token": refresh_token, "expire_at": expire_time})
     response.delete_cookie("refresh_token")
     return {"message": "Successfully logged out"}
+# ... other code
 
 
 
