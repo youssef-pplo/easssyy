@@ -416,15 +416,21 @@ async def login(response: Response, data: LoginRequest, students: AsyncIOMotorCo
 
 ############ LOGOUT ################
 
-
 @app.post("/logout")
 async def logout(response: Response, request: Request, student_collection: AsyncIOMotorCollection = Depends(get_student_collection), blacklist: AsyncIOMotorCollection = Depends(get_token_blacklist_collection)):
     refresh_token = request.cookies.get("refresh_token")
-    if not refresh_token: raise HTTPException(status.HTTP_400_BAD_REQUEST, "No active session.")
+    if not refresh_token:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "No active session.")
     payload = decode_token(refresh_token)
     if payload and (student_id := payload.get("sub")):
         await student_collection.update_one({"_id": ObjectId(student_id)}, {"$pull": {"active_refresh_tokens": refresh_token}})
-        expire_time = dateti@app.post("/login", response_model=RefreshTokenResponse)
+        expire_time = datetime.fromtimestamp(payload.get("exp"), tz=timezone.utc)
+        await blacklist.insert_one({"token": refresh_token, "expire_at": expire_time}) # This line is indented
+    response.delete_cookie("refresh_token")
+    return {"message": "Successfully logged out"}
+
+########### LOGIN #######
+@app.post("/login", response_model=RefreshTokenResponse)
 async def login(response: Response, data: LoginRequest, students: AsyncIOMotorCollection = Depends(get_student_collection)):
     student = await students.find_one({"$or": [{"phone": data.identifier}, {"email": data.identifier}, {"student_code": data.identifier}]})
     if not student or not verify_password(data.password, student["password"]):
