@@ -377,8 +377,7 @@ async def register(data: RegisterRequest, students: AsyncIOMotorCollection = Dep
 ############ LOGIN ################
 
 
-
-@app.post("/login", response_model=RefreshTokenResponse)
+@app.post("/login", response_model=LoginResponseWithData)
 async def login(response: Response, data: LoginRequest, students: AsyncIOMotorCollection = Depends(get_student_collection)):
     student = await students.find_one({"$or": [{"phone": data.identifier}, {"email": data.identifier}, {"student_code": data.identifier}]})
     if not student or not verify_password(data.password, student["password"]):
@@ -403,12 +402,12 @@ async def login(response: Response, data: LoginRequest, students: AsyncIOMotorCo
     )
     
     # استخراج بيانات الطالب وإزالة كلمة المرور
-    student_info = StudentProfileResponse(**student).dict()
-    student_info.pop("password", None)
+    student_info = StudentProfileResponse(**student)
 
     return {
         "access_token": access_token,
         "refresh_token": refresh_token,
+        "token_type": "bearer",
         "data": student_info
     }
 
