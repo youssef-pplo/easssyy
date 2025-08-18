@@ -379,8 +379,12 @@ async def register(data: RegisterRequest, students: AsyncIOMotorCollection = Dep
 @app.post("/login", response_model=RefreshTokenResponse)
 async def login(response: Response, data: LoginRequest, students: AsyncIOMotorCollection = Depends(get_student_collection)):
     student = await students.find_one({"$or": [{"phone": data.identifier}, {"email": data.identifier}, {"student_code": data.identifier}]})
-    if not student or not verify_password(data.password, student["password"]): raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid credentials")
-    if len(student.get("active_refresh_tokens", [])) >= 3: raise HTTPException(status.HTTP_403_FORBIDDEN, "Max devices reached.")
+    if not student or not verify_password(data.password, student["password"]):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid credentials")
+
+    if len(student.get("active_refresh_tokens", [])) >= 3:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Max devices reached.")
+    
     student_id = str(student["_id"])
     access_token = create_access_token(student_id)
     refresh_token, refresh_expire = create_refresh_token(student_id)
@@ -395,7 +399,17 @@ async def login(response: Response, data: LoginRequest, students: AsyncIOMotorCo
         secure=True,
         samesite="none"
     )
-    return {"access_token": access_token, "refresh_token": refresh_token}
+    
+    # Extract student info, excluding the password hash
+    student_info = StudentProfileResponse(**student).dict()
+    student_info.pop("password", None)
+
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "data": student_info
+    }
+
 
 
 
