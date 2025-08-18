@@ -376,13 +376,15 @@ async def register(data: RegisterRequest, students: AsyncIOMotorCollection = Dep
 
 ############ LOGIN ################
 
+
+
 @app.post("/login", response_model=RefreshTokenResponse)
 async def login(response: Response, data: LoginRequest, students: AsyncIOMotorCollection = Depends(get_student_collection)):
     student = await students.find_one({"$or": [{"phone": data.identifier}, {"email": data.identifier}, {"student_code": data.identifier}]})
     if not student or not verify_password(data.password, student["password"]):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid credentials")
-
-    if len(student.get("active_refresh_tokens", [])) >= 3000000:
+    
+    if len(student.get("active_refresh_tokens", [])) >= 3:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Max devices reached.")
     
     student_id = str(student["_id"])
@@ -400,7 +402,7 @@ async def login(response: Response, data: LoginRequest, students: AsyncIOMotorCo
         samesite="none"
     )
     
-    # Extract student info, excluding the password hash
+    # استخراج بيانات الطالب وإزالة كلمة المرور
     student_info = StudentProfileResponse(**student).dict()
     student_info.pop("password", None)
 
@@ -409,8 +411,6 @@ async def login(response: Response, data: LoginRequest, students: AsyncIOMotorCo
         "refresh_token": refresh_token,
         "data": student_info
     }
-
-
 
 
 
@@ -425,7 +425,40 @@ async def logout(response: Response, request: Request, student_collection: Async
     payload = decode_token(refresh_token)
     if payload and (student_id := payload.get("sub")):
         await student_collection.update_one({"_id": ObjectId(student_id)}, {"$pull": {"active_refresh_tokens": refresh_token}})
-        expire_time = datetime.fromtimestamp(payload.get("exp"), tz=timezone.utc)
+        expire_time = dateti@app.post("/login", response_model=RefreshTokenResponse)
+async def login(response: Response, data: LoginRequest, students: AsyncIOMotorCollection = Depends(get_student_collection)):
+    student = await students.find_one({"$or": [{"phone": data.identifier}, {"email": data.identifier}, {"student_code": data.identifier}]})
+    if not student or not verify_password(data.password, student["password"]):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid credentials")
+    
+    if len(student.get("active_refresh_tokens", [])) >= 3:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Max devices reached.")
+    
+    student_id = str(student["_id"])
+    access_token = create_access_token(student_id)
+    refresh_token, refresh_expire = create_refresh_token(student_id)
+
+    await students.update_one({"_id": student["_id"]}, {"$push": {"active_refresh_tokens": refresh_token}})
+
+    response.set_cookie(
+        "refresh_token",
+        refresh_token,
+        expires=refresh_expire,
+        httponly=True,
+        secure=True,
+        samesite="none"
+    )
+    
+    # استخراج بيانات الطالب وإزالة كلمة المرور
+    student_info = StudentProfileResponse(**student).dict()
+    student_info.pop("password", None)
+
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "data": student_info
+    }
+me.fromtimestamp(payload.get("exp"), tz=timezone.utc)
         await blacklist.insert_one({"token": refresh_token, "expire_at": expire_time})
     response.delete_cookie("refresh_token")
     return {"message": "Successfully logged out"}
