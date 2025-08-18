@@ -152,3 +152,11 @@ class ParentDashboardResponse(BaseModel):
     student_info: StudentProfileResponse
     purchased_chapters: List[ChapterSummaryResponse]
     test_results: List[TestResultResponse]
+
+
+
+class LoginResponseWithData(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"  # Ensure this is always "bearer"
+    data: StudentProfileResponse
