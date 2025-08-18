@@ -382,7 +382,7 @@ async def login(response: Response, data: LoginRequest, students: AsyncIOMotorCo
     if not student or not verify_password(data.password, student["password"]):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid credentials")
 
-    if len(student.get("active_refresh_tokens", [])) >= 3:
+    if len(student.get("active_refresh_tokens", [])) >= 3000000:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Max devices reached.")
     
     student_id = str(student["_id"])
