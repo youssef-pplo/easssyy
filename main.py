@@ -1142,7 +1142,7 @@ async def get_test_frontend():
         document.getElementById('getFavoritesBtn').addEventListener('click', () => apiCall('/dashboard/favorites', 'GET'));
 
         // Receipt Listeners
-        document.getElementById('addReceiptForm').addEventListener('submit', e => { e.preventDefault(); apiCall('/receipts', 'POST', { student_code: document.getElementById('receiptStudentCode').value, receipt_type: document.getElementById('receiptType').value, item_id: document.getElementById('itemId').value, amount: parseFloat(document.getElementById('receiptAmount').value), description: document.getElementById('receiptDesc'].value }); });
+        document.getElementById('addReceiptForm').addEventListener('submit', e => { e.preventDefault(); apiCall('/receipts', 'POST', { student_code: document.getElementById('receiptStudentCode').value, receipt_type: document.getElementById('receiptType').value, item_id: document.getElementById('itemId').value, amount: parseFloat(document.getElementById('receiptAmount').value), description: document.getElementById('receiptDesc').value }); });
         document.getElementById('getReceiptsForm').addEventListener('submit', e => { e.preventDefault(); const studentCode = document.getElementById('getReceiptsStudentCode').value; if(studentCode) apiCall(`/receipts/${studentCode}`, 'GET'); });
     </script>
 </body>
