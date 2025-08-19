@@ -30,12 +30,22 @@ from schemas import (
     ChapterSummaryResponse, LessonSummaryResponse, LessonDetailResponse,
     BookResponse, ItemPurchaseRequest, TestResultResponse,
     AddTestResultRequest, VideoResponse, FavoriteVideoRequest,
-    ParentLoginRequest, ParentDashboardResponse, LoginResponseWithData 
-    
-
-
+    ParentLoginRequest, ParentDashboardResponse, LoginResponseWithData,
+    LessonResponseV2
 )
 from motor.motor_asyncio import AsyncIOMotorCollection
+
+GRADE_MAP = {
+    "10": "الصف الأول الثانوي",
+    "11": "الصف الثاني الثانوي",
+    "12": "الصف الثالث الثانوي",
+}
+GRADE_MAP_REVERSE = {v: k for k, v in GRADE_MAP.items()}
+
+def format_student_grade(student: dict):
+    if student and "grade" in student and student.get("grade") in GRADE_MAP:
+        student["grade"] = GRADE_MAP[student["grade"]]
+    return student
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -66,6 +76,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 courseImg = "https://image-placeholder.com/images/actual-size/200x200.png"
 bookImg = "https://image-placeholder.com/images/actual-size/150x200.png" # New image for books
 
+# UPDATED MOCK DATABASE to include new fields
 EDUCATIONAL_CONTENT = {
     "1": { # Year 1
         "term1": {
@@ -76,9 +87,9 @@ EDUCATIONAL_CONTENT = {
                         102: {"title": "الفصل الثاني: الخلية", "price": "170 جنية"},
                     },
                     "lessons": {
-                        10101: {"chapter_id": 101, "title": "مقدمة أولى ثانوي", "price": "مجانا", "isFree": True},
-                        10102: {"chapter_id": 101, "title": "التركيب الكيميائي", "price": "75 جنية", "isFree": False},
-                        10201: {"chapter_id": 102, "title": "النظرية الخلوية", "price": "85 جنية", "isFree": False},
+                        10101: {"chapter_id": 101, "title": "مقدمة أولى ثانوي", "description": "وصف الدرس", "vimeo_embed_src": "https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1", "image_url": "https://easybio-drabdelrahman.com/wp-content/uploads/2023/04/lesson-1-1024x576.jpg", "price": "مجانا", "isFree": True, "hours": 2, "lecture": "1الدرس", "course": "1الكورس"},
+                        10102: {"chapter_id": 101, "title": "التركيب الكيميائي", "description": "وصف الدرس", "vimeo_embed_src": "https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1", "image_url": "https://easybio-drabdelrahman.com/wp-content/uploads/2023/04/lesson-1-1024x576.jpg", "price": "75 جنية", "isFree": False, "hours": 3, "lecture": "2الدرس", "course": "2الكورس"},
+                        10201: {"chapter_id": 102, "title": "النظرية الخلوية", "description": "وصف الدرس", "vimeo_embed_src": "https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1", "image_url": "https://easybio-drabdelrahman.com/wp-content/uploads/2023/04/lesson-1-1024x576.jpg", "price": "85 جنية", "isFree": False, "hours": 1, "lecture": "1الدرس", "course": "1الكورس"},
                     },
                     "lesson_details": {
                         10101: {"subject": "أولى ثانوي - ترم أول", "duration": "ساعة", "exams": "لا يوجد", "questions": "10 أسئلة"},
@@ -94,9 +105,9 @@ EDUCATIONAL_CONTENT = {
                         112: {"title": "Chapter 2: The Cell", "price": "170 EGP"},
                     },
                     "lessons": {
-                        11101: {"chapter_id": 111, "title": "Intro for 1st Year", "price": "Free", "isFree": True},
-                        11102: {"chapter_id": 111, "title": "Chemical Composition", "price": "75 EGP", "isFree": False},
-                        11201: {"chapter_id": 112, "title": "Cell Theory", "price": "85 EGP", "isFree": False},
+                        11101: {"chapter_id": 111, "title": "Intro for 1st Year", "description": "Lesson Description", "vimeo_embed_src": "https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1", "image_url": "https://easybio-drabdelrahman.com/wp-content/uploads/2023/04/lesson-1-1024x576.jpg", "price": "Free", "isFree": True, "hours": 1, "lecture": "Lecture 1", "course": "Course 1"},
+                        11102: {"chapter_id": 111, "title": "Chemical Composition", "description": "Lesson Description", "vimeo_embed_src": "https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1", "image_url": "https://easybio-drabdelrahman.com/wp-content/uploads/2023/04/lesson-1-1024x576.jpg", "price": "75 EGP", "isFree": False, "hours": 2, "lecture": "Lecture 2", "course": "Course 2"},
+                        11201: {"chapter_id": 112, "title": "Cell Theory", "description": "Lesson Description", "vimeo_embed_src": "https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1", "image_url": "https://easybio-drabdelrahman.com/wp-content/uploads/2023/04/lesson-1-1024x576.jpg", "price": "85 EGP", "isFree": False, "hours": 1.5, "lecture": "Lecture 1", "course": "Course 1"},
                     },
                      "lesson_details": {
                         11101: {"subject": "1st Year - Term 1", "duration": "1 hour", "exams": "None", "questions": "10 questions"},
@@ -113,7 +124,7 @@ EDUCATIONAL_CONTENT = {
                         121: {"title": "الفصل الثالث: الوراثة", "price": "160 جنية"},
                     },
                     "lessons": {
-                        12101: {"chapter_id": 121, "title": "قوانين مندل", "price": "80 جنية", "isFree": False},
+                        12101: {"chapter_id": 121, "title": "قوانين مندل", "description": "وصف الدرس", "vimeo_embed_src": "https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1", "image_url": "https://easybio-drabdelrahman.com/wp-content/uploads/2023/04/lesson-1-1024x576.jpg", "price": "80 جنية", "isFree": False, "hours": 2, "lecture": "1الدرس", "course": "1الكورس"},
                     },
                     "lesson_details": {
                         12101: {"subject": "أولى ثانوي - ترم ثاني", "duration": "ساعتان", "exams": "1 امتحان", "questions": "35 سؤال"},
@@ -126,7 +137,7 @@ EDUCATIONAL_CONTENT = {
                         131: {"title": "Chapter 3: Genetics", "price": "160 EGP"},
                     },
                     "lessons": {
-                        13101: {"chapter_id": 131, "title": "Mendel's Laws", "price": "80 EGP", "isFree": False},
+                        13101: {"chapter_id": 131, "title": "Mendel's Laws", "description": "Lesson Description", "vimeo_embed_src": "https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1", "image_url": "https://easybio-drabdelrahman.com/wp-content/uploads/2023/04/lesson-1-1024x576.jpg", "price": "80 EGP", "isFree": False, "hours": 2, "lecture": "Lecture 1", "course": "Course 1"},
                     },
                     "lesson_details": {
                         13101: {"subject": "1st Year - Term 2", "duration": "2 hours", "exams": "1 exam", "questions": "35 questions"},
@@ -144,8 +155,8 @@ EDUCATIONAL_CONTENT = {
                         202: {"title": "الفصل الثاني: النقل", "price": "210 جنية"},
                     },
                     "lessons": {
-                        20101: {"chapter_id": 201, "title": "التغذية الذاتية", "price": "مجانا", "isFree": True},
-                        20201: {"chapter_id": 202, "title": "النقل في النبات", "price": "105 جنية", "isFree": False},
+                        20101: {"chapter_id": 201, "title": "التغذية الذاتية", "description": "وصف الدرس", "vimeo_embed_src": "https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1", "image_url": "https://easybio-drabdelrahman.com/wp-content/uploads/2023/04/lesson-1-1024x576.jpg", "price": "مجانا", "isFree": True, "hours": 1.25, "lecture": "1الدرس", "course": "1الكورس"},
+                        20201: {"chapter_id": 202, "title": "النقل في النبات", "description": "وصف الدرس", "vimeo_embed_src": "https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1", "image_url": "https://easybio-drabdelrahman.com/wp-content/uploads/2023/04/lesson-1-1024x576.jpg", "price": "105 جنية", "isFree": False, "hours": 2, "lecture": "1الدرس", "course": "1الكورس"},
                     },
                     "lesson_details": {
                         20101: {"subject": "تانية ثانوي - ترم أول", "duration": "ساعة وربع", "exams": "لا يوجد", "questions": "15 سؤال"},
@@ -159,7 +170,7 @@ EDUCATIONAL_CONTENT = {
                         211: {"title": "Chapter 1: Nutrition and Digestion", "price": "200 EGP"},
                     },
                     "lessons": {
-                        21101: {"chapter_id": 211, "title": "Autotrophic Nutrition", "price": "Free", "isFree": True},
+                        21101: {"chapter_id": 211, "title": "Autotrophic Nutrition", "description": "Lesson Description", "vimeo_embed_src": "https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1", "image_url": "https://easybio-drabdelrahman.com/wp-content/uploads/2023/04/lesson-1-1024x576.jpg", "price": "Free", "isFree": True, "hours": 1.25, "lecture": "Lecture 1", "course": "Course 1"},
                     },
                     "lesson_details": {
                         21101: {"subject": "2nd Year - Term 1", "duration": "1.25 hours", "exams": "None", "questions": "15 questions"},
@@ -174,7 +185,7 @@ EDUCATIONAL_CONTENT = {
                         221: {"title": "الفصل الثالث: التنفس", "price": "190 جنية"},
                     },
                     "lessons": {
-                        22101: {"chapter_id": 221, "title": "التنفس الخلوي", "price": "95 جنية", "isFree": False},
+                        22101: {"chapter_id": 221, "title": "التنفس الخلوي", "description": "وصف الدرس", "vimeo_embed_src": "https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1", "image_url": "https://easybio-drabdelrahman.com/wp-content/uploads/2023/04/lesson-1-1024x576.jpg", "price": "95 جنية", "isFree": False, "hours": 2, "lecture": "1الدرس", "course": "1الكورس"},
                     },
                     "lesson_details": {
                         22101: {"subject": "تانية ثانوي - ترم ثاني", "duration": "ساعتان", "exams": "1 امتحان", "questions": "50 سؤال"},
@@ -187,7 +198,7 @@ EDUCATIONAL_CONTENT = {
                         231: {"title": "Chapter 3: Respiration", "price": "190 EGP"},
                     },
                     "lessons": {
-                        23101: {"chapter_id": 231, "title": "Cellular Respiration", "price": "95 EGP", "isFree": False},
+                        23101: {"chapter_id": 231, "title": "Cellular Respiration", "description": "Lesson Description", "vimeo_embed_src": "https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1", "image_url": "https://easybio-drabdelrahman.com/wp-content/uploads/2023/04/lesson-1-1024x576.jpg", "price": "95 EGP", "isFree": False, "hours": 2, "lecture": "Lecture 1", "course": "Course 1"},
                     },
                     "lesson_details": {
                         23101: {"subject": "2nd Year - Term 2", "duration": "2 hours", "exams": "1 exam", "questions": "50 questions"},
@@ -204,7 +215,7 @@ EDUCATIONAL_CONTENT = {
                         301: {"title": "الفصل الأول: الدعامة والحركة", "price": "280 جنية"},
                     },
                     "lessons": {
-                        30101: {"chapter_id": 301, "title": "الدعامة في الكائنات الحية", "price": "140 جنية", "isFree": False},
+                        30101: {"chapter_id": 301, "title": "الدعامة في الكائنات الحية", "description": "وصف الدرس", "vimeo_embed_src": "https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1", "image_url": "https://easybio-drabdelrahman.com/wp-content/uploads/2023/04/lesson-1-1024x576.jpg", "price": "140 جنية", "isFree": False, "hours": 3, "lecture": "1الدرس", "course": "1الكورس"},
                     },
                     "lesson_details": {
                         30101: {"subject": "ثالثة ثانوي - ترم أول", "duration": "3 ساعات", "exams": "2 امتحان", "questions": "90 سؤال"},
@@ -217,7 +228,7 @@ EDUCATIONAL_CONTENT = {
                         311: {"title": "Chapter 1: Support and Movement", "price": "280 EGP"},
                     },
                     "lessons": {
-                        31101: {"chapter_id": 311, "title": "Support in Living Organisms", "price": "140 EGP", "isFree": False},
+                        31101: {"chapter_id": 311, "title": "Support in Living Organisms", "description": "Lesson Description", "vimeo_embed_src": "https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1", "image_url": "https://easybio-drabdelrahman.com/wp-content/uploads/2023/04/lesson-1-1024x576.jpg", "price": "140 EGP", "isFree": False, "hours": 3, "lecture": "Lecture 1", "course": "Course 1"},
                     },
                     "lesson_details": {
                         31101: {"subject": "3rd Year - Term 1", "duration": "3 hours", "exams": "2 exams", "questions": "90 questions"},
@@ -233,8 +244,8 @@ EDUCATIONAL_CONTENT = {
                         322: {"title": "الفصل الرابع: المناعة", "price": "320 جنية"},
                     },
                     "lessons": {
-                        32101: {"chapter_id": 321, "title": "طرق التكاثر", "price": "150 جنية", "isFree": False},
-                        32201: {"chapter_id": 322, "title": "آليات عمل الجهاز المناعي", "price": "مجانا", "isFree": True},
+                        32101: {"chapter_id": 321, "title": "طرق التكاثر", "description": "وصف الدرس", "vimeo_embed_src": "https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1", "image_url": "https://easybio-drabdelrahman.com/wp-content/uploads/2023/04/lesson-1-1024x576.jpg", "price": "150 جنية", "isFree": False, "hours": 3.5, "lecture": "1الدرس", "course": "1الكورس"},
+                        32201: {"chapter_id": 322, "title": "آليات عمل الجهاز المناعي", "description": "وصف الدرس", "vimeo_embed_src": "https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1", "image_url": "https://easybio-drabdelrahman.com/wp-content/uploads/2023/04/lesson-1-1024x576.jpg", "price": "مجانا", "isFree": True, "hours": 2, "lecture": "1الدرس", "course": "1الكورس"},
                     },
                     "lesson_details": {
                         32101: {"subject": "ثالثة ثانوي - ترم ثاني", "duration": "3.5 ساعات", "exams": "2 امتحان", "questions": "100 سؤال"},
@@ -249,8 +260,8 @@ EDUCATIONAL_CONTENT = {
                         332: {"title": "Chapter 4: Immunity", "price": "320 EGP"},
                     },
                     "lessons": {
-                        33101: {"chapter_id": 331, "title": "Methods of Reproduction", "price": "150 EGP", "isFree": False},
-                        33201: {"chapter_id": 332, "title": "Immune System Mechanisms", "price": "Free", "isFree": True},
+                        33101: {"chapter_id": 331, "title": "Methods of Reproduction", "description": "Lesson Description", "vimeo_embed_src": "https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1", "image_url": "https://easybio-drabdelrahman.com/wp-content/uploads/2023/04/lesson-1-1024x576.jpg", "price": "150 EGP", "isFree": False, "hours": 3.5, "lecture": "Lecture 1", "course": "Course 1"},
+                        33201: {"chapter_id": 332, "title": "Immune System Mechanisms", "description": "Lesson Description", "vimeo_embed_src": "https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1", "image_url": "https://easybio-drabdelrahman.com/wp-content/uploads/2023/04/lesson-1-1024x576.jpg", "price": "Free", "isFree": True, "hours": 2, "lecture": "Lecture 1", "course": "Course 1"},
                     },
                     "lesson_details": {
                         33101: {"subject": "3rd Year - Term 2", "duration": "3.5 hours", "exams": "2 exams", "questions": "100 questions"},
@@ -361,11 +372,18 @@ def find_item_in_content_by_id(item_id_to_find: int):
 # --- API Endpoints ---
 @app.get("/")
 def root(): return {"status": "ok"}
+
 @app.post("/register")
 async def register(data: RegisterRequest, students: AsyncIOMotorCollection = Depends(get_student_collection)):
-    if await students.find_one({"$or": [{"phone": data.phone}, {"email": data.email}]}): raise HTTPException(status.HTTP_400_BAD_REQUEST, "Phone or Email already exists")
-    if data.password != data.confirm_password: raise HTTPException(status.HTTP_400_BAD_REQUEST, "Passwords do not match")
+    if await students.find_one({"$or": [{"phone": data.phone}, {"email": data.email}]}):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Phone or Email already exists")
+    if data.password != data.confirm_password:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Passwords do not match")
+
     s_data = data.dict()
+    if s_data.get("grade") in GRADE_MAP_REVERSE:
+        s_data["grade"] = GRADE_MAP_REVERSE[s_data["grade"]]
+
     s_data.pop("confirm_password")
     s_data["password"] = hash_password(data.password)
     s_data["student_code"] = generate_student_code()
@@ -375,7 +393,6 @@ async def register(data: RegisterRequest, students: AsyncIOMotorCollection = Dep
 
 
 ############ LOGIN ################
-
 
 @app.post("/login", response_model=LoginResponseWithData)
 async def login(response: Response, data: LoginRequest, students: AsyncIOMotorCollection = Depends(get_student_collection)):
@@ -401,7 +418,7 @@ async def login(response: Response, data: LoginRequest, students: AsyncIOMotorCo
         samesite="none"
     )
     
-    # استخراج بيانات الطالب وإزالة كلمة المرور
+    student = format_student_grade(student)
     student_info = StudentProfileResponse(**student)
 
     return {
@@ -411,12 +428,8 @@ async def login(response: Response, data: LoginRequest, students: AsyncIOMotorCo
         "data": student_info
     }
 
-
-
-
 ############ LOGOUT ################
 
-
 @app.post("/logout")
 async def logout(response: Response, request: Request, student_collection: AsyncIOMotorCollection = Depends(get_student_collection), blacklist: AsyncIOMotorCollection = Depends(get_token_blacklist_collection)):
     refresh_token = request.cookies.get("refresh_token")
@@ -429,66 +442,9 @@ async def logout(response: Response, request: Request, student_collection: Async
         await blacklist.insert_one({"token": refresh_token, "expire_at": expire_time})
     response.delete_cookie("refresh_token")
     return {"message": "Successfully logged out"}
-
-
-
-
-########### LOGIN #######
-@app.post("/login", response_model=RefreshTokenResponse)
-async def login(response: Response, data: LoginRequest, students: AsyncIOMotorCollection = Depends(get_student_collection)):
-    student = await students.find_one({"$or": [{"phone": data.identifier}, {"email": data.identifier}, {"student_code": data.identifier}]})
-    if not student or not verify_password(data.password, student["password"]):
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid credentials")
-    
-    if len(student.get("active_refresh_tokens", [])) >= 3:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Max devices reached.")
-    
-    student_id = str(student["_id"])
-    access_token = create_access_token(student_id)
-    refresh_token, refresh_expire = create_refresh_token(student_id)
-
-    await students.update_one({"_id": student["_id"]}, {"$push": {"active_refresh_tokens": refresh_token}})
-
-    response.set_cookie(
-        "refresh_token",
-        refresh_token,
-        expires=refresh_expire,
-        httponly=True,
-        secure=True,
-        samesite="none"
-    )
-    
-    # استخراج بيانات الطالب وإزالة كلمة المرور
-    student_info = StudentProfileResponse(**student).dict()
-    student_info.pop("password", None)
-
-    return {
-        "access_token": access_token,
-        "refresh_token": refresh_token,
-        "data": student_info
-    }
-
-
-# ... other code
-@app.post("/logout")
-async def logout(response: Response, request: Request, student_collection: AsyncIOMotorCollection = Depends(get_student_collection), blacklist: AsyncIOMotorCollection = Depends(get_token_blacklist_collection)):
-    refresh_token = request.cookies.get("refresh_token")
-    if not refresh_token:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "No active session.")
-    payload = decode_token(refresh_token)
-    if payload and (student_id := payload.get("sub")):
-        # This block needs to have consistent indentation
-        await student_collection.update_one({"_id": ObjectId(student_id)}, {"$pull": {"active_refresh_tokens": refresh_token}})
-        expire_time = datetime.fromtimestamp(payload.get("exp"), tz=timezone.utc)
-        await blacklist.insert_one({"token": refresh_token, "expire_at": expire_time})
-    response.delete_cookie("refresh_token")
-    return {"message": "Successfully logged out"}
-# ... other code
-
 
 
 ############ REFRESH TOKEN ################
-
 
 @app.post("/token/refresh", response_model=RefreshTokenResponse)
 async def refresh(request: Request, response: Response, student_collection: AsyncIOMotorCollection = Depends(get_student_collection), blacklist: AsyncIOMotorCollection = Depends(get_token_blacklist_collection)):
@@ -505,12 +461,7 @@ async def refresh(request: Request, response: Response, student_collection: Asyn
     response.set_cookie("refresh_token", new_refresh_token, expires=new_refresh_expire, httponly=True, secure=True, samesite="none")
     return {"access_token": new_access_token, "refresh_token": new_refresh_token}
 
-
-
-
 ############ FORGET PASS ################
-
-
 
 @app.post("/forgot-password")
 async def forgot_password(data: ForgotPasswordRequest, background_tasks: BackgroundTasks, students: AsyncIOMotorCollection = Depends(get_student_collection), reset_codes: AsyncIOMotorCollection = Depends(get_password_reset_collection)):
@@ -535,10 +486,7 @@ async def forgot_password(data: ForgotPasswordRequest, background_tasks: Backgro
     
     return {"message": "A password reset code has been sent to your email."}
 
-
-
 ############ Verify code ################
-
 
 @app.post("/verify-reset-code")
 async def verify_reset_code(data: VerifyResetCodeRequest, reset_codes: AsyncIOMotorCollection = Depends(get_password_reset_collection)):
@@ -549,9 +497,7 @@ async def verify_reset_code(data: VerifyResetCodeRequest, reset_codes: AsyncIOMo
     permission_token = create_password_reset_token(data.email, "reset_password_permission", 5)
     return {"message": "Code verified.", "reset_token": permission_token}
 
-
 ############ Reset PASS ################
-
 
 @app.post("/reset-password")
 async def reset_password(data: ResetPasswordRequest, students: AsyncIOMotorCollection = Depends(get_student_collection)):
@@ -564,28 +510,37 @@ async def reset_password(data: ResetPasswordRequest, students: AsyncIOMotorColle
     if result.matched_count == 0: raise HTTPException(status.HTTP_404_NOT_FOUND, "Student not found.")
     return {"message": "Password reset successfully."}
 
-
 ############ Get prof ################
 
-
 @app.get("/student/profile", response_model=StudentProfileResponse)
-async def get_student_profile(current_student: dict = Depends(get_current_student)): return StudentProfileResponse(**current_student)
+async def get_student_profile(current_student: dict = Depends(get_current_student)):
+    current_student = format_student_grade(current_student)
+    return StudentProfileResponse(**current_student)
 
 ############ POST prof ################
 
 @app.put("/student/profile/edit")
 async def edit_profile(data: StudentEditRequest, current_student: dict = Depends(get_current_student), student_collection: AsyncIOMotorCollection = Depends(get_student_collection)):
     update_data = data.dict(exclude_unset=True)
-    if not update_data: raise HTTPException(status.HTTP_400_BAD_REQUEST, "No data to update")
-    if "password" in update_data and update_data["password"]: update_data["password"] = hash_password(update_data["password"])
-    else: update_data.pop("password", None)
+    if not update_data:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No data to update")
+
+    if "grade" in update_data and update_data["grade"] in GRADE_MAP_REVERSE:
+        update_data["grade"] = GRADE_MAP_REVERSE[update_data["grade"]]
+
+    if "password" in update_data and update_data["password"]:
+        update_data["password"] = hash_password(update_data["password"])
+    else:
+        update_data.pop("password", None)
+        
     await student_collection.update_one({"_id": current_student["_id"]}, {"$set": update_data})
     updated_doc = await student_collection.find_one({"_id": current_student["_id"]})
+    
+    updated_doc = format_student_grade(updated_doc)
+    
     response_data = StudentProfileResponse(**updated_doc).dict()
     response_data.pop("password", None)
     return {"message": "Profile updated", "student": response_data}
-
-
 
 ######################## Receipts ############################
 ############ Create rec ################
@@ -626,17 +581,64 @@ async def get_homepage_chapters(year: str, term: str, language: str, subject: st
 
 ############ GET chapters lessons ################
 
-@app.get("/chapters/{chapter_id}", response_model=List[LessonSummaryResponse])
+@app.get("/chapters/{chapter_id}", response_model=List[LessonResponseV2])
 async def get_chapter_lessons(chapter_id: int):
     lessons = []
+    found_lessons = False
+    chapter_title = None
+
+    # Find the chapter title first
+    for year_data in EDUCATIONAL_CONTENT.values():
+        for term_data in year_data.values():
+            for lang_data in term_data.values():
+                for subject_data in lang_data.values():
+                    if chapter_id in subject_data.get("chapters", {}):
+                        chapter_title = subject_data["chapters"][chapter_id]["title"]
+                        break
+                if chapter_title:
+                    break
+            if chapter_title:
+                break
+        if chapter_title:
+            break
+            
+    if not chapter_title:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Chapter not found.")
+
+    # Iterate through content to find lessons for the specified chapter
     for year in EDUCATIONAL_CONTENT.values():
         for term in year.values():
             for language in term.values():
                 for subject in language.values():
                     for lesson_id, lesson_data in subject.get("lessons", {}).items():
                         if lesson_data.get("chapter_id") == chapter_id:
-                            lessons.append(LessonSummaryResponse(id=lesson_id, image=courseImg, **lesson_data))
-    if not lessons: raise HTTPException(status.HTTP_404_NOT_FOUND, "Chapter not found or has no lessons.")
+                            found_lessons = True
+                            # Safely extract data with default values for missing keys
+                            price_str = lesson_data.get("price", "0 جنية").split()[0]
+                            try:
+                                price_val = float(price_str)
+                            except (ValueError, IndexError):
+                                price_val = 0.0
+                            
+                            # Use the same logic for the lesson's course and lecture
+                            course_string = f"{chapter_title} ({chapter_id})"
+                            lecture_string = f"Lecture {lesson_id}"
+
+                            lessons.append(LessonResponseV2(
+                                id=str(lesson_id),
+                                title=lesson_data.get("title"),
+                                description=lesson_data.get("description", ""),
+                                vimeo_embed_src=lesson_data.get("vimeo_embed_src"),
+                                image_url=lesson_data.get("image_url"),
+                                price=price_val,
+                                hours=lesson_data.get("hours", 0),
+                                lecture=lecture_string,
+                                course=course_string
+                            ))
+
+    if not found_lessons:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Chapter has no lessons.")
+        
     return lessons
 
 ############ GET chapters details ################
@@ -905,6 +907,7 @@ async def get_parent_dashboard(
                                 ChapterSummaryResponse(id=cid, image=courseImg, variant="chapter", **cdata)
                             )
     
+    student = format_student_grade(student)
     # 4. Assemble and return the complete dashboard response
     return ParentDashboardResponse(
         student_info=StudentProfileResponse(**student),
@@ -1139,7 +1142,7 @@ async def get_test_frontend():
         document.getElementById('getFavoritesBtn').addEventListener('click', () => apiCall('/dashboard/favorites', 'GET'));
 
         // Receipt Listeners
-        document.getElementById('addReceiptForm').addEventListener('submit', e => { e.preventDefault(); apiCall('/receipts', 'POST', { student_code: document.getElementById('receiptStudentCode').value, receipt_type: document.getElementById('receiptType').value, item_id: document.getElementById('itemId').value, amount: parseFloat(document.getElementById('receiptAmount').value), description: document.getElementById('receiptDesc').value }); });
+        document.getElementById('addReceiptForm').addEventListener('submit', e => { e.preventDefault(); apiCall('/receipts', 'POST', { student_code: document.getElementById('receiptStudentCode').value, receipt_type: document.getElementById('receiptType').value, item_id: document.getElementById('itemId').value, amount: parseFloat(document.getElementById('receiptAmount').value), description: document.getElementById('receiptDesc'].value }); });
         document.getElementById('getReceiptsForm').addEventListener('submit', e => { e.preventDefault(); const studentCode = document.getElementById('getReceiptsStudentCode').value; if(studentCode) apiCall(`/receipts/${studentCode}`, 'GET'); });
     </script>
 </body>

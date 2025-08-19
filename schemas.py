@@ -160,3 +160,16 @@ class LoginResponseWithData(BaseModel):
     refresh_token: str
     token_type: str = "bearer"  # Ensure this is always "bearer"
     data: StudentProfileResponse
+
+
+# NEW: Schema that matches the requested format
+class LessonResponseV2(BaseModel):
+    id: str
+    title: str
+    description: Optional[str] = ""
+    vimeo_embed_src: Optional[str] = ""
+    image_url: Optional[str] = ""
+    price: float
+    hours: int
+    lecture: Optional[str] = ""
+    course: Optional[str] = ""
