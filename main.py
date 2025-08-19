@@ -58,7 +58,7 @@ app = FastAPI(lifespan=lifespan)
 # --- Configuration & Middleware ---
 SECRET_KEY = "Ea$yB1o"
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 15
+ACCESS_TOKEN_EXPIRE_MINUTES = 1
 REFRESH_TOKEN_EXPIRE_DAYS = 7
 SMTP_HOST, SMTP_PORT = 'smtp.hostinger.com', 587
 SMTP_USERNAME, SMTP_PASSWORD = 'noreply@easybio-drabdelrahman.com', 'Webacc@123'
