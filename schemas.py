@@ -154,7 +154,6 @@ class ParentDashboardResponse(BaseModel):
     test_results: List[TestResultResponse]
 
 
-
 class LoginResponseWithData(BaseModel):
     access_token: str
     refresh_token: str
@@ -170,6 +169,27 @@ class LessonResponseV2(BaseModel):
     vimeo_embed_src: Optional[str] = ""
     image_url: Optional[str] = ""
     price: float
-    hours: int
+    hours: float  # Corrected from int to float to resolve validation error
     lecture: Optional[str] = ""
     course: Optional[str] = ""
+
+class AdminLoginRequest(BaseModel):
+    email: EmailStr
+    password: str
+
+class AdminTokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+
+class ContentUpdate(BaseModel):
+    content: dict
+
+class BookCreateRequest(BaseModel):
+    title: str
+    price: str
+    image: str
+
+class BookUpdateRequest(BaseModel):
+    title: Optional[str] = None
+    price: Optional[str] = None
+    image: Optional[str] = None

@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>API Tester</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap');
+
+        body {
+            font-family: 'Roboto', sans-serif;
+            margin: 0;
+            padding: 40px;
+            background-color: #f0f2f5;
+            color: #333;
+        }
+
+        .container {
+            display: grid;
+            grid-template-columns: 1fr 400px; /* Adjust the column sizes for better layout */
+            gap: 30px;
+            max-width: 1200px;
+            margin: auto;
+        }
+
+        .api-controls {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        h1 {
+            color: #1a237e;
+            font-weight: 700;
+            font-size: 2.5em;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        h2, h3 {
+            color: #1a237e;
+            border-bottom: 2px solid #e3e8f0;
+            padding-bottom: 10px;
+            margin-top: 0;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 1.5em;
+        }
+        
+        h3 {
+            font-size: 1.2em;
+            cursor: default;
+        }
+
+        .section {
+            background-color: #ffffff;
+            padding: 25px;
+            border-radius: 10px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+            transition: box-shadow 0.3s ease;
+        }
+        .section:hover {
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+        }
+
+        form {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        input, select {
+            padding: 12px;
+            font-size: 16px;
+            border-radius: 6px;
+            border: 1px solid #ddd;
+            width: 100%;
+            box-sizing: border-box;
+            transition: border-color 0.3s;
+        }
+        input:focus, select:focus {
+            outline: none;
+            border-color: #3f51b5;
+        }
+
+        button {
+            padding: 12px;
+            font-size: 16px;
+            border-radius: 6px;
+            border: none;
+            cursor: pointer;
+            font-weight: 500;
+            color: white;
+            transition: background-color 0.3s;
+        }
+
+        .btn-primary { background-color: #3f51b5; }
+        .btn-primary:hover { background-color: #303f9f; }
+
+        .btn-secondary { background-color: #ff9800; }
+        .btn-secondary:hover { background-color: #fb8c00; }
+        
+        .btn-danger { background-color: #e53935; }
+        .btn-danger:hover { background-color: #d32f2f; }
+
+        .btn-group {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+        }
+        
+        /* New CSS for fixed response panel */
+        .response-panel-wrapper {
+            position: fixed;
+            top: 40px;
+            right: 40px;
+            width: 400px;
+            height: calc(100vh - 80px);
+        }
+
+        .response-panel {
+            background-color: #263238;
+            color: #eceff1;
+            padding: 25px;
+            border-radius: 10px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+            height: 100%;
+            overflow-y: hidden;
+        }
+
+        .response-panel h2 {
+            color: #ffcc80;
+            border-bottom-color: #455a64;
+        }
+
+        pre {
+            background-color: #1a1a1a;
+            color: #f8f8f2;
+            padding: 15px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            border-radius: 8px;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 14px;
+            height: calc(100% - 60px);
+            overflow-y: auto;
+        }
+        
+        .collapsible-content {
+            display: none;
+            padding-top: 15px;
+        }
+        
+        .collapsible-content.active {
+            display: block;
+        }
+
+        .arrow {
+            transition: transform 0.3s ease;
+        }
+        .active .arrow {
+            transform: rotate(90deg);
+        }
+
+        #accessToken, #resetToken {
+            background-color: #e8eaf6;
+            font-family: 'Courier New', Courier, monospace;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="api-controls">
+            <h1>🚀 API Tester</h1>
+            <div class="section">
+                <h2>Tokens</h2>
+                <label>Access Token:</label>
+                <input type="text" id="accessToken" readonly>
+                <label>Reset Token:</label>
+                <input type="text" id="resetToken" readonly>
+            </div>
+            <div class="section" id="parent-portal-section">
+                <h2>👪 Parent Portal <span class="arrow">▶</span></h2>
+                <div class="collapsible-content">
+                    <form id="parentLoginForm">
+                        <h3>Get Student Dashboard</h3>
+                        <input type="text" id="studentPhone" placeholder="Student Phone Number" value="0101122334455">
+                        <input type="text" id="parentPhone" placeholder="Parent Phone Number" value="01166778899">
+                        <button type="submit" class="btn-primary">Login as Parent</button>
+                    </form>
+                </div>
+            </div>
+            <div class="section" id="educational-content-section">
+                <h2>📚 Educational Content <span class="arrow">▶</span></h2>
+                <div class="collapsible-content">
+                    <form id="contentForm">
+                        <h3>Get Homepage Chapters</h3>
+                        <select id="year"><option value="1">1st Year</option><option value="2">2nd Year</option><option value="3">3rd Year</option></select>
+                        <select id="term"><option value="term1">Term 1</option><option value="term2">Term 2</option></select>
+                        <select id="language"><option value="arabic">Arabic</option><option value="english">English</option></select>
+                        <select id="subject"><option value="biology">Biology</option></select>
+                        <div class="btn-group">
+                            <button type="submit" class="btn-primary">Get All Chapters</button>
+                            <button type="button" id="getFreeChaptersBtn" class="btn-primary">Get Free Chapters</button>
+                            <button type="button" id="getPaidChaptersBtn" class="btn-primary">Get Paid Chapters</button>
+                            <button type="button" id="getBooksBtn" class="btn-primary">Get Books</button>
+                        </div>
+                    </form>
+                    <form id="chapterForm">
+                        <h3>Get Lessons in a Chapter</h3>
+                        <input type="number" id="chapterId" placeholder="Chapter ID (e.g., 101, 211, 321)">
+                        <button type="submit" class="btn-primary">Get Lessons</button>
+                    </form>
+                    <form id="lessonForm">
+                        <h3>Get Lesson Details</h3>
+                        <input type="number" id="lessonId" placeholder="Lesson ID (e.g., 10101, 22101, 33101)">
+                        <button type="submit" class="btn-primary">Get Details</button>
+                    </form>
+                </div>
+            </div>
+            <div class="section" id="user-management-section">
+                <h2>👤 User Management <span class="arrow">▶</span></h2>
+                <div class="collapsible-content">
+                    <form id="registerForm">
+                        <h3>Register</h3>
+                        <input type="email" id="regEmail" placeholder="Email" value="user-test@example.com">
+                        <input type="password" id="regPassword" placeholder="Password" value="password123">
+                        <input type="password" id="regConfirmPassword" placeholder="Confirm Password" value="password123">
+                        <input type="text" id="regName" placeholder="Name" value="Test User">
+                        <input type="text" id="regPhone" placeholder="Phone (must be unique)" value="0101122334455">
+                        <input type="text" id="regParentPhone" placeholder="Parent Phone" value="01166778899">
+                        <input type="text" id="regCity" placeholder="City" value="Cairo">
+                        <input type="text" id="regGrade" placeholder="Grade" value="12">
+                        <input type="text" id="regLang" placeholder="Language" value="en">
+                        <button type="submit" class="btn-primary">Register</button>
+                    </form>
+                    <form id="loginForm">
+                        <h3>Login</h3>
+                        <input type="text" id="loginIdentifier" placeholder="Email or Phone" value="user-test@example.com">
+                        <input type="password" id="loginPassword" placeholder="Password" value="password123">
+                        <button type="submit" class="btn-primary">Login</button>
+                    </form>
+                </div>
+            </div>
+            <div class="section" id="password-reset-section">
+                <h2>🔑 Password Reset <span class="arrow">▶</span></h2>
+                <div class="collapsible-content">
+                    <form id="forgotPasswordForm">
+                        <h3>1. Request Reset Code</h3>
+                        <input type="email" id="forgotEmail" placeholder="Enter registered email" value="user-test@example.com">
+                        <button type="submit" class="btn-primary">Send Code</button>
+                    </form>
+                    <form id="verifyCodeForm">
+                        <h3>2. Verify Code</h3>
+                        <input type="email" id="verifyEmail" placeholder="Enter email again" value="user-test@example.com">
+                        <input type="text" id="resetCode" placeholder="5-digit code from email">
+                        <button type="submit" class="btn-primary">Verify Code & Get Reset Token</button>
+                    </form>
+                    <form id="resetPasswordForm">
+                        <h3>3. Reset Password</h3>
+                        <input type="text" id="resetToken" placeholder="Reset Token from step 2">
+                        <input type="password" id="newPassword" placeholder="New Password">
+                        <button type="submit" class="btn-primary">Reset Password</button>
+                    </form>
+                </div>
+            </div>
+            <div class="section" id="student-dashboard-section">
+                <h2>🎓 Student Dashboard <span class="arrow">▶</span></h2>
+                <div class="collapsible-content">
+                    <form id="buyItemForm">
+                        <h3>Buy Chapter</h3>
+                        <input type="text" id="buyItemId" placeholder="Chapter ID to buy (e.g. 101)">
+                        <button type="submit" class="btn-primary">Buy Item</button>
+                    </form>
+                    <form id="addTestResultForm">
+                        <h3>Add Test Result</h3>
+                        <input type="text" id="testName" placeholder="Test Name (e.g., Chapter 1 Quiz)" value="Final Exam Practice">
+                        <input type="text" id="testScore" placeholder="Score (e.g., 95%)" value="88%">
+                        <button type="submit" class="btn-primary">Add Result</button>
+                    </form>
+                    <form id="addFavoriteForm">
+                        <h3>Add Favorite Video</h3>
+                        <input type="number" id="videoId" placeholder="Video ID (e.g., 1, 2, 3)" value="1">
+                        <button type="submit" class="btn-primary">Add Favorite</button>
+                    </form>
+                    <div class="btn-group">
+                        <button id="getMyChaptersBtn" class="btn-secondary">Get My Chapters</button>
+                        <button id="getMyTestsBtn" class="btn-secondary">Get My Tests</button>
+                        <button id="getFavoritesBtn" class="btn-secondary">Get My Favorites</button>
+                    </div>
+                </div>
+            </div>
+            <div class="section" id="auth-actions-section">
+                <h2>🔒 Authenticated Actions <span class="arrow">▶</span></h2>
+                <div class="collapsible-content">
+                    <div class="btn-group">
+                        <button id="getProfileBtn" class="btn-secondary">Get Profile</button>
+                        <button id="refreshTokenBtn" class="btn-secondary">Refresh Tokens</button>
+                        <button id="logoutBtn" class="btn-danger">Logout</button>
+                    </div>
+                </div>
+            </div>
+            <div class="section" id="receipts-section">
+                <h2>📜 Receipts <span class="arrow">▶</span></h2>
+                <div class="collapsible-content">
+                    <form id="addReceiptForm">
+                        <h3>Add Receipt (Admin Action)</h3>
+                        <input type="text" id="receiptStudentCode" placeholder="Student Code">
+                        <select id="receiptType">
+                            <option value="package_purchase">Package Purchase</option>
+                            <option value="balance_charge">Balance Charge</option>
+                        </select>
+                        <input type="text" id="itemId" placeholder="Item ID (e.g., 'PHYSICS_PKG_1')">
+                        <input type="number" id="receiptAmount" placeholder="Amount">
+                        <input type="text" id="receiptDesc" placeholder="Description">
+                        <button type="submit" class="btn-primary">Add Receipt</button>
+                    </form>
+                    <form id="getReceiptsForm">
+                        <h3>Get Receipts by Student Code</h3>
+                        <input type="text" id="getReceiptsStudentCode" placeholder="Student Code">
+                        <button type="submit" class="btn-primary">Get Receipts</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        <div class="response-panel-wrapper">
+            <div class="response-panel">
+                <h2>📊 API Response</h2>
+                <pre id="responseOutput">Response will be shown here...</pre>
+            </div>
+        </div>
+    </div>
+    <script>
+        const responseOutput = document.getElementById('responseOutput');
+        const accessTokenInput = document.getElementById('accessToken');
+        const resetTokenInput = document.getElementById('resetToken');
+
+        // Toggle collapsible sections
+        document.querySelectorAll('.section h2').forEach(header => {
+            header.addEventListener('click', () => {
+                const content = header.nextElementSibling;
+                header.classList.toggle('active');
+                content.classList.toggle('active');
+            });
+        });
+
+        // Set initial state of collapsible sections
+        const initialActiveSectionId = 'user-management-section';
+        const initialActiveSection = document.getElementById(initialActiveSectionId);
+        if (initialActiveSection) {
+            initialActiveSection.querySelector('h2').click();
+        }
+
+        const apiCall = async (endpoint, method = 'GET', body = null) => {
+            const headers = { 'Content-Type': 'application/json' };
+            if (accessTokenInput.value && !endpoint.startsWith('/parent')) {
+                headers['Authorization'] = `Bearer ${accessTokenInput.value}`;
+            }
+            try {
+                const options = { method, headers, credentials: 'include' };
+                if (body) {
+                    options.body = JSON.stringify(body);
+                }
+                responseOutput.textContent = 'Loading...';
+                const response = await fetch(endpoint, options);
+                const data = await response.json();
+                responseOutput.textContent = JSON.stringify(data, null, 2);
+
+                if (data.access_token) { accessTokenInput.value = data.access_token; }
+                if (data.reset_token) { resetTokenInput.value = data.reset_token; }
+
+            } catch (error) {
+                responseOutput.textContent = `Error: ${error.message}`;
+            }
+        };
+
+        const getContentPath = () => {
+            const year = document.getElementById('year').value;
+            const term = document.getElementById('term').value;
+            const language = document.getElementById('language').value;
+            const subject = document.getElementById('subject').value;
+            return `/homepage/${year}/${term}/${language}/${subject}`;
+        };
+
+        // Parent Listener
+        document.getElementById('parentLoginForm').addEventListener('submit', e => { e.preventDefault(); apiCall('/parent/dashboard', 'POST', { student_phone: document.getElementById('studentPhone').value, parent_phone: document.getElementById('parentPhone').value }); });
+
+        // Content Listeners
+        document.getElementById('contentForm').addEventListener('submit', e => { e.preventDefault(); apiCall(getContentPath(), 'GET'); });
+        document.getElementById('getFreeChaptersBtn').addEventListener('click', () => apiCall(`${getContentPath()}/free`, 'GET'));
+        document.getElementById('getPaidChaptersBtn').addEventListener('click', () => apiCall(`${getContentPath()}/paid`, 'GET'));
+        document.getElementById('getBooksBtn').addEventListener('click', () => apiCall('/books', 'GET'));
+        document.getElementById('chapterForm').addEventListener('submit', e => { e.preventDefault(); const chapterId = document.getElementById('chapterId').value; if (chapterId) apiCall(`/chapters/${chapterId}`, 'GET'); });
+        document.getElementById('lessonForm').addEventListener('submit', e => { e.preventDefault(); const lessonId = document.getElementById('lessonId').value; if (lessonId) apiCall(`/lessons/${lessonId}`, 'GET'); });
+
+        // User & Auth Listeners
+        document.getElementById('registerForm').addEventListener('submit', e => { e.preventDefault(); apiCall('/register', 'POST', { name: document.getElementById('regName').value, phone: document.getElementById('regPhone').value, email: document.getElementById('regEmail').value, parent_phone: document.getElementById('regParentPhone').value, city: document.getElementById('regCity').value, grade: document.getElementById('regGrade').value, lang: document.getElementById('regLang').value, password: document.getElementById('regPassword').value, confirm_password: document.getElementById('regConfirmPassword').value }); });
+        document.getElementById('loginForm').addEventListener('submit', e => { e.preventDefault(); apiCall('/login', 'POST', { identifier: document.getElementById('loginIdentifier').value, password: document.getElementById('loginPassword').value }); });
+        document.getElementById('forgotPasswordForm').addEventListener('submit', e => { e.preventDefault(); apiCall('/forgot-password', 'POST', { email: document.getElementById('forgotEmail').value }); });
+        document.getElementById('verifyCodeForm').addEventListener('submit', e => { e.preventDefault(); apiCall('/verify-reset-code', 'POST', { email: document.getElementById('verifyEmail').value, code: document.getElementById('resetCode').value }); });
+        document.getElementById('resetPasswordForm').addEventListener('submit', e => { e.preventDefault(); apiCall('/reset-password', 'POST', { token: document.getElementById('resetToken').value, new_password: document.getElementById('newPassword').value }); });
+
+        // Authenticated Actions
+        document.getElementById('getProfileBtn').addEventListener('click', () => apiCall('/student/profile', 'GET'));
+        document.getElementById('refreshTokenBtn').addEventListener('click', () => apiCall('/token/refresh', 'POST'));
+        document.getElementById('logoutBtn').addEventListener('click', () => { apiCall('/logout', 'POST'); accessTokenInput.value = ''; });
+
+        // Dashboard Listeners
+        document.getElementById('buyItemForm').addEventListener('submit', e => { e.preventDefault(); const itemId = document.getElementById('buyItemId').value; if(itemId) apiCall('/dashboard/buy-item', 'POST', { item_id: itemId, item_type: 'chapter' }); });
+        document.getElementById('addTestResultForm').addEventListener('submit', e => { e.preventDefault(); apiCall('/dashboard/add-test-result', 'POST', { test_name: document.getElementById('testName').value, score: document.getElementById('testScore').value }); });
+        document.getElementById('addFavoriteForm').addEventListener('submit', e => { e.preventDefault(); const videoId = document.getElementById('videoId').value; if(videoId) apiCall('/dashboard/favorites/add', 'POST', { video_id: parseInt(videoId) }); });
+        document.getElementById('getMyChaptersBtn').addEventListener('click', () => apiCall('/dashboard/my-chapters', 'GET'));
+        document.getElementById('getMyTestsBtn').addEventListener('click', () => apiCall('/dashboard/my-tests', 'GET'));
+        document.getElementById('getFavoritesBtn').addEventListener('click', () => apiCall('/dashboard/favorites', 'GET'));
+
+        // Receipt Listeners
+        document.getElementById('addReceiptForm').addEventListener('submit', e => { e.preventDefault(); apiCall('/receipts', 'POST', { student_code: document.getElementById('receiptStudentCode').value, receipt_type: document.getElementById('receiptType').value, item_id: document.getElementById('itemId').value, amount: parseFloat(document.getElementById('receiptAmount').value), description: document.getElementById('receiptDesc').value }); });
+        document.getElementById('getReceiptsForm').addEventListener('submit', e => { e.preventDefault(); const studentCode = document.getElementById('getReceiptsStudentCode').value; if(studentCode) apiCall(`/receipts/${studentCode}`, 'GET'); });
+    </script>
+</body>
+</html>

@@ -2,7 +2,7 @@
 from fastapi import FastAPI, HTTPException, Depends, status, Response, Request, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse
 from passlib.hash import bcrypt
 from jose import JWTError, jwt
 from pydantic import BaseModel, EmailStr
@@ -14,13 +14,17 @@ from datetime import datetime, timedelta, timezone
 from contextlib import asynccontextmanager
 import smtplib
 from email.mime.text import MIMEText
+from pathlib import Path
 
 from database import (
     connect_to_mongo, close_mongo_connection, get_student_collection,
     get_token_blacklist_collection, get_receipt_collection,
     get_password_reset_collection,
-    get_favorite_videos_collection
-
+    get_favorite_videos_collection,
+    get_educational_content_collection,
+    get_books_collection,
+    get_mock_test_results_collection,
+    get_mock_videos_collection
 )
 from schemas import (
     RegisterRequest, LoginRequest, TokenResponse, RefreshTokenResponse,
@@ -31,7 +35,10 @@ from schemas import (
     BookResponse, ItemPurchaseRequest, TestResultResponse,
     AddTestResultRequest, VideoResponse, FavoriteVideoRequest,
     ParentLoginRequest, ParentDashboardResponse, LoginResponseWithData,
-    LessonResponseV2
+    LessonResponseV2,
+    # New Admin Schemas
+    AdminLoginRequest, AdminTokenResponse, ContentUpdate,
+    BookCreateRequest, BookUpdateRequest
 )
 from motor.motor_asyncio import AsyncIOMotorCollection
 
@@ -42,10 +49,26 @@ GRADE_MAP = {
 }
 GRADE_MAP_REVERSE = {v: k for k, v in GRADE_MAP.items()}
 
+# --- Constants for image URLs ---
+courseImg = "https://image-placeholder.com/images/actual-size/200x200.png"
+bookImg = "https://image-placeholder.com/images/actual-size/150x200.png"
+
 def format_student_grade(student: dict):
     if student and "grade" in student and student.get("grade") in GRADE_MAP:
         student["grade"] = GRADE_MAP[student["grade"]]
     return student
+
+# NEW: A helper function to convert integer keys to strings
+def convert_dict_keys_to_str(d):
+    new_d = {}
+    for k, v in d.items():
+        if isinstance(v, dict):
+            new_d[str(k)] = convert_dict_keys_to_str(v)
+        else:
+            new_d[str(k)] = v
+    return new_d
+
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -58,7 +81,7 @@ app = FastAPI(lifespan=lifespan)
 # --- Configuration & Middleware ---
 SECRET_KEY = "Ea$yB1o"
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 1
+ACCESS_TOKEN_EXPIRE_MINUTES = 15
 REFRESH_TOKEN_EXPIRE_DAYS = 7
 SMTP_HOST, SMTP_PORT = 'smtp.hostinger.com', 587
 SMTP_USERNAME, SMTP_PASSWORD = 'noreply@easybio-drabdelrahman.com', 'Webacc@123'
@@ -70,259 +93,6 @@ app.add_middleware(
 )
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
-
-
-# --- NEW COMPREHENSIVE MOCK DATABASE FOR EDUCATIONAL CONTENT ---
-courseImg = "https://image-placeholder.com/images/actual-size/200x200.png"
-bookImg = "https://image-placeholder.com/images/actual-size/150x200.png" # New image for books
-
-# UPDATED MOCK DATABASE to include new fields
-EDUCATIONAL_CONTENT = {
-    "1": { # Year 1
-        "term1": {
-            "arabic": {
-                "biology": {
-                    "chapters": {
-                        101: {"title": "الفصل الأول: الأساس الكيميائي للحياة", "price": "0 جنية"},
-                        102: {"title": "الفصل الثاني: الخلية", "price": "170 جنية"},
-                    },
-                    "lessons": {
-                        10101: {"chapter_id": 101, "title": "مقدمة أولى ثانوي", "description": "وصف الدرس", "vimeo_embed_src": "https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1", "image_url": "https://easybio-drabdelrahman.com/wp-content/uploads/2023/04/lesson-1-1024x576.jpg", "price": "مجانا", "isFree": True, "hours": 2, "lecture": "1الدرس", "course": "1الكورس"},
-                        10102: {"chapter_id": 101, "title": "التركيب الكيميائي", "description": "وصف الدرس", "vimeo_embed_src": "https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1", "image_url": "https://easybio-drabdelrahman.com/wp-content/uploads/2023/04/lesson-1-1024x576.jpg", "price": "75 جنية", "isFree": False, "hours": 3, "lecture": "2الدرس", "course": "2الكورس"},
-                        10201: {"chapter_id": 102, "title": "النظرية الخلوية", "description": "وصف الدرس", "vimeo_embed_src": "https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1", "image_url": "https://easybio-drabdelrahman.com/wp-content/uploads/2023/04/lesson-1-1024x576.jpg", "price": "85 جنية", "isFree": False, "hours": 1, "lecture": "1الدرس", "course": "1الكورس"},
-                    },
-                    "lesson_details": {
-                        10101: {"subject": "أولى ثانوي - ترم أول", "duration": "ساعة", "exams": "لا يوجد", "questions": "10 أسئلة"},
-                        10102: {"subject": "أولى ثانوي - ترم أول", "duration": "ساعتان", "exams": "1 امتحان", "questions": "30 سؤال"},
-                        10201: {"subject": "أولى ثانوي - ترم أول", "duration": "ساعة ونصف", "exams": "1 امتحان", "questions": "40 سؤال"},
-                    }
-                }
-            },
-            "english": {
-                "biology": {
-                    "chapters": {
-                        111: {"title": "Chapter 1: Chemical Basis of Life", "price": "150 EGP"},
-                        112: {"title": "Chapter 2: The Cell", "price": "170 EGP"},
-                    },
-                    "lessons": {
-                        11101: {"chapter_id": 111, "title": "Intro for 1st Year", "description": "Lesson Description", "vimeo_embed_src": "https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1", "image_url": "https://easybio-drabdelrahman.com/wp-content/uploads/2023/04/lesson-1-1024x576.jpg", "price": "Free", "isFree": True, "hours": 1, "lecture": "Lecture 1", "course": "Course 1"},
-                        11102: {"chapter_id": 111, "title": "Chemical Composition", "description": "Lesson Description", "vimeo_embed_src": "https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1", "image_url": "https://easybio-drabdelrahman.com/wp-content/uploads/2023/04/lesson-1-1024x576.jpg", "price": "75 EGP", "isFree": False, "hours": 2, "lecture": "Lecture 2", "course": "Course 2"},
-                        11201: {"chapter_id": 112, "title": "Cell Theory", "description": "Lesson Description", "vimeo_embed_src": "https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1", "image_url": "https://easybio-drabdelrahman.com/wp-content/uploads/2023/04/lesson-1-1024x576.jpg", "price": "85 EGP", "isFree": False, "hours": 1.5, "lecture": "Lecture 1", "course": "Course 1"},
-                    },
-                     "lesson_details": {
-                        11101: {"subject": "1st Year - Term 1", "duration": "1 hour", "exams": "None", "questions": "10 questions"},
-                        11102: {"subject": "1st Year - Term 1", "duration": "2 hours", "exams": "1 exam", "questions": "30 questions"},
-                        11201: {"subject": "1st Year - Term 1", "duration": "1.5 hours", "exams": "1 exam", "questions": "40 questions"},
-                    }
-                }
-            }
-        },
-        "term2": { # Year 1, Term 2
-            "arabic": {
-                "biology": {
-                    "chapters": {
-                        121: {"title": "الفصل الثالث: الوراثة", "price": "160 جنية"},
-                    },
-                    "lessons": {
-                        12101: {"chapter_id": 121, "title": "قوانين مندل", "description": "وصف الدرس", "vimeo_embed_src": "https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1", "image_url": "https://easybio-drabdelrahman.com/wp-content/uploads/2023/04/lesson-1-1024x576.jpg", "price": "80 جنية", "isFree": False, "hours": 2, "lecture": "1الدرس", "course": "1الكورس"},
-                    },
-                    "lesson_details": {
-                        12101: {"subject": "أولى ثانوي - ترم ثاني", "duration": "ساعتان", "exams": "1 امتحان", "questions": "35 سؤال"},
-                    }
-                }
-            },
-            "english": {
-                 "biology": {
-                    "chapters": {
-                        131: {"title": "Chapter 3: Genetics", "price": "160 EGP"},
-                    },
-                    "lessons": {
-                        13101: {"chapter_id": 131, "title": "Mendel's Laws", "description": "Lesson Description", "vimeo_embed_src": "https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1", "image_url": "https://easybio-drabdelrahman.com/wp-content/uploads/2023/04/lesson-1-1024x576.jpg", "price": "80 EGP", "isFree": False, "hours": 2, "lecture": "Lecture 1", "course": "Course 1"},
-                    },
-                    "lesson_details": {
-                        13101: {"subject": "1st Year - Term 2", "duration": "2 hours", "exams": "1 exam", "questions": "35 questions"},
-                    }
-                }
-            }
-        }
-    },
-    "2": { # Year 2
-        "term1": {
-            "arabic": {
-                "biology": {
-                    "chapters": {
-                        201: {"title": "الفصل الأول: التغذية والهضم", "price": "200 جنية"},
-                        202: {"title": "الفصل الثاني: النقل", "price": "210 جنية"},
-                    },
-                    "lessons": {
-                        20101: {"chapter_id": 201, "title": "التغذية الذاتية", "description": "وصف الدرس", "vimeo_embed_src": "https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1", "image_url": "https://easybio-drabdelrahman.com/wp-content/uploads/2023/04/lesson-1-1024x576.jpg", "price": "مجانا", "isFree": True, "hours": 1.25, "lecture": "1الدرس", "course": "1الكورس"},
-                        20201: {"chapter_id": 202, "title": "النقل في النبات", "description": "وصف الدرس", "vimeo_embed_src": "https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1", "image_url": "https://easybio-drabdelrahman.com/wp-content/uploads/2023/04/lesson-1-1024x576.jpg", "price": "105 جنية", "isFree": False, "hours": 2, "lecture": "1الدرس", "course": "1الكورس"},
-                    },
-                    "lesson_details": {
-                        20101: {"subject": "تانية ثانوي - ترم أول", "duration": "ساعة وربع", "exams": "لا يوجد", "questions": "15 سؤال"},
-                        20201: {"subject": "تانية ثانوي - ترم أول", "duration": "ساعتان", "exams": "1 امتحان", "questions": "45 سؤال"},
-                    }
-                }
-            },
-            "english": {
-                "biology": {
-                    "chapters": {
-                        211: {"title": "Chapter 1: Nutrition and Digestion", "price": "200 EGP"},
-                    },
-                    "lessons": {
-                        21101: {"chapter_id": 211, "title": "Autotrophic Nutrition", "description": "Lesson Description", "vimeo_embed_src": "https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1", "image_url": "https://easybio-drabdelrahman.com/wp-content/uploads/2023/04/lesson-1-1024x576.jpg", "price": "Free", "isFree": True, "hours": 1.25, "lecture": "Lecture 1", "course": "Course 1"},
-                    },
-                    "lesson_details": {
-                        21101: {"subject": "2nd Year - Term 1", "duration": "1.25 hours", "exams": "None", "questions": "15 questions"},
-                    }
-                }
-            }
-        },
-        "term2": { # Year 2, Term 2
-             "arabic": {
-                "biology": {
-                    "chapters": {
-                        221: {"title": "الفصل الثالث: التنفس", "price": "190 جنية"},
-                    },
-                    "lessons": {
-                        22101: {"chapter_id": 221, "title": "التنفس الخلوي", "description": "وصف الدرس", "vimeo_embed_src": "https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1", "image_url": "https://easybio-drabdelrahman.com/wp-content/uploads/2023/04/lesson-1-1024x576.jpg", "price": "95 جنية", "isFree": False, "hours": 2, "lecture": "1الدرس", "course": "1الكورس"},
-                    },
-                    "lesson_details": {
-                        22101: {"subject": "تانية ثانوي - ترم ثاني", "duration": "ساعتان", "exams": "1 امتحان", "questions": "50 سؤال"},
-                    }
-                }
-            },
-            "english": {
-                "biology": {
-                    "chapters": {
-                        231: {"title": "Chapter 3: Respiration", "price": "190 EGP"},
-                    },
-                    "lessons": {
-                        23101: {"chapter_id": 231, "title": "Cellular Respiration", "description": "Lesson Description", "vimeo_embed_src": "https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1", "image_url": "https://easybio-drabdelrahman.com/wp-content/uploads/2023/04/lesson-1-1024x576.jpg", "price": "95 EGP", "isFree": False, "hours": 2, "lecture": "Lecture 1", "course": "Course 1"},
-                    },
-                    "lesson_details": {
-                        23101: {"subject": "2nd Year - Term 2", "duration": "2 hours", "exams": "1 exam", "questions": "50 questions"},
-                    }
-                }
-            }
-        }
-    },
-    "3": { # Year 3
-        "term1": {
-            "arabic": {
-                "biology": {
-                    "chapters": {
-                        301: {"title": "الفصل الأول: الدعامة والحركة", "price": "280 جنية"},
-                    },
-                    "lessons": {
-                        30101: {"chapter_id": 301, "title": "الدعامة في الكائنات الحية", "description": "وصف الدرس", "vimeo_embed_src": "https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1", "image_url": "https://easybio-drabdelrahman.com/wp-content/uploads/2023/04/lesson-1-1024x576.jpg", "price": "140 جنية", "isFree": False, "hours": 3, "lecture": "1الدرس", "course": "1الكورس"},
-                    },
-                    "lesson_details": {
-                        30101: {"subject": "ثالثة ثانوي - ترم أول", "duration": "3 ساعات", "exams": "2 امتحان", "questions": "90 سؤال"},
-                    }
-                }
-            },
-            "english": {
-                 "biology": {
-                    "chapters": {
-                        311: {"title": "Chapter 1: Support and Movement", "price": "280 EGP"},
-                    },
-                    "lessons": {
-                        31101: {"chapter_id": 311, "title": "Support in Living Organisms", "description": "Lesson Description", "vimeo_embed_src": "https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1", "image_url": "https://easybio-drabdelrahman.com/wp-content/uploads/2023/04/lesson-1-1024x576.jpg", "price": "140 EGP", "isFree": False, "hours": 3, "lecture": "Lecture 1", "course": "Course 1"},
-                    },
-                    "lesson_details": {
-                        31101: {"subject": "3rd Year - Term 1", "duration": "3 hours", "exams": "2 exams", "questions": "90 questions"},
-                    }
-                }
-            }
-        },
-        "term2": {
-            "arabic": {
-                "biology": {
-                    "chapters": {
-                        321: {"title": "الفصل الثالث: التكاثر", "price": "300 جنية"},
-                        322: {"title": "الفصل الرابع: المناعة", "price": "320 جنية"},
-                    },
-                    "lessons": {
-                        32101: {"chapter_id": 321, "title": "طرق التكاثر", "description": "وصف الدرس", "vimeo_embed_src": "https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1", "image_url": "https://easybio-drabdelrahman.com/wp-content/uploads/2023/04/lesson-1-1024x576.jpg", "price": "150 جنية", "isFree": False, "hours": 3.5, "lecture": "1الدرس", "course": "1الكورس"},
-                        32201: {"chapter_id": 322, "title": "آليات عمل الجهاز المناعي", "description": "وصف الدرس", "vimeo_embed_src": "https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1", "image_url": "https://easybio-drabdelrahman.com/wp-content/uploads/2023/04/lesson-1-1024x576.jpg", "price": "مجانا", "isFree": True, "hours": 2, "lecture": "1الدرس", "course": "1الكورس"},
-                    },
-                    "lesson_details": {
-                        32101: {"subject": "ثالثة ثانوي - ترم ثاني", "duration": "3.5 ساعات", "exams": "2 امتحان", "questions": "100 سؤال"},
-                        32201: {"subject": "ثالثة ثانوي - ترم ثاني", "duration": "ساعتان", "exams": "1 امتحان", "questions": "50 سؤال"},
-                    }
-                }
-            },
-            "english": {
-                 "biology": {
-                    "chapters": {
-                        331: {"title": "Chapter 3: Reproduction", "price": "300 EGP"},
-                        332: {"title": "Chapter 4: Immunity", "price": "320 EGP"},
-                    },
-                    "lessons": {
-                        33101: {"chapter_id": 331, "title": "Methods of Reproduction", "description": "Lesson Description", "vimeo_embed_src": "https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1", "image_url": "https://easybio-drabdelrahman.com/wp-content/uploads/2023/04/lesson-1-1024x576.jpg", "price": "150 EGP", "isFree": False, "hours": 3.5, "lecture": "Lecture 1", "course": "Course 1"},
-                        33201: {"chapter_id": 332, "title": "Immune System Mechanisms", "description": "Lesson Description", "vimeo_embed_src": "https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1", "image_url": "https://easybio-drabdelrahman.com/wp-content/uploads/2023/04/lesson-1-1024x576.jpg", "price": "Free", "isFree": True, "hours": 2, "lecture": "Lecture 1", "course": "Course 1"},
-                    },
-                    "lesson_details": {
-                        33101: {"subject": "3rd Year - Term 2", "duration": "3.5 hours", "exams": "2 exams", "questions": "100 questions"},
-                        33201: {"subject": "3rd Year - Term 2", "duration": "2 hours", "exams": "1 exam", "questions": "50 questions"},
-                    }
-                }
-            }
-        }
-    }
-}
-# --- NEW MOCK DATABASE FOR BOOKS ---
-BOOKS_DATA = [
-  {
-    "id": 1,
-    "title": "ملزمة المناعة والتكاثر",
-    "price": "50 جنية",
-    "image": bookImg,
-  },
-  {
-    "id": 2,
-    "title": "DNA & RNA",
-    "price": "50 جنية",
-    "image": bookImg,
-  },
-  {
-    "id": 3,
-    "title": "ملزمة المناعة",
-    "price": "50 جنية",
-    "image": bookImg,
-  },
-]
-
-MOCK_TEST_RESULTS = {
-    # This is keyed by student_code. You'd replace this with a real DB query.
-    "ABC12345": [
-        {
-            "id": 1,
-            "test_name": "امتحان الفصل الأول: الدعامة والحركة",
-            "score": "85%",
-            "date_taken": "2025-08-10",
-            "review_link": "/api/tests/review/1",
-            "download_link": "/api/tests/download/1"
-        }
-    ],
-    "ZYX98765": [
-        {
-            "id": 2,
-            "test_name": "Test on Chapter 2: The Cell",
-            "score": "92%",
-            "date_taken": "2025-08-15",
-            "review_link": "/api/tests/review/2",
-            "download_link": "/api/tests/download/2"
-        }
-    ]
-}
-
-MOCK_VIDEOS = {
-    1: {"id": 1, "title": "Lesson 1.1: Intro to Biology", "thumbnail_url": "/thumbs/1.jpg", "video_url": "/videos/1.mp4"},
-    2: {"id": 2, "title": "Lesson 1.2: The Scientific Method", "thumbnail_url": "/thumbs/2.jpg", "video_url": "/videos/2.mp4"},
-    3: {"id": 3, "title": "Chapter 2 Review", "thumbnail_url": "/thumbs/3.jpg", "video_url": "/videos/3.mp4"},
-}
 
 # --- Helper & Auth Functions ---
 def create_token(data: dict, expires_delta: timedelta):
@@ -359,14 +129,21 @@ async def get_current_student(token: str = Depends(oauth2_scheme), student_colle
     return student
 
 # Add a new helper function to find content details
-def find_item_in_content_by_id(item_id_to_find: int):
-    """Finds a chapter or lesson by its ID in the mock content."""
-    for year_content in EDUCATIONAL_CONTENT.values():
+async def find_item_in_content_by_id(item_id_to_find: int):
+    """Finds a chapter or lesson by its ID in the database content."""
+    edu_collection = await get_educational_content_collection()
+    edu_doc = await edu_collection.find_one({})
+    if not edu_doc:
+        return None
+    content = edu_doc.get("content", {})
+    # Iterate through the converted string keys
+    for year_content in content.values():
         for term_content in year_content.values():
             for lang_content in term_content.values():
                 for subject_content in lang_content.values():
-                    if item_id_to_find in subject_content.get("chapters", {}):
-                        return subject_content["chapters"][item_id_to_find]
+                    # Check for the item with the converted string key
+                    if str(item_id_to_find) in subject_content.get("chapters", {}):
+                        return subject_content["chapters"][str(item_id_to_find)]
     return None
 
 # --- API Endpoints ---
@@ -569,31 +346,59 @@ async def get_all_receipts_for_student(student_code: str, receipt_collection: As
 # --- EDUCATIONAL CONTENT ENDPOINTS ---
 ############ GET Home Page chapters ################
 
-@app.get("/homepage/{year}/{term}/{language}/{subject}", response_model=List[ChapterSummaryResponse])
-async def get_homepage_chapters(year: str, term: str, language: str, subject: str):
-    try:
-        content = EDUCATIONAL_CONTENT[year][term][language][subject]
-        chapters_data = content.get("chapters", {})
-    except KeyError:
-        return [] # Return empty list if content is not found
-    response = [ChapterSummaryResponse(id=cid, image=courseImg, variant="chapter", **cdata) for cid, cdata in chapters_data.items()]
-    return response
+@app.get("/homepage/{year}/{term}/{language}/{subject}", response_model=List[LessonResponseV2])
+async def get_homepage_chapters(year: str, term: str, language: str, subject: str, edu_collection: AsyncIOMotorCollection = Depends(get_educational_content_collection)):
+    content_doc = await edu_collection.find_one({"content": {"$exists": True}})
+    if not content_doc or year not in content_doc["content"] or term not in content_doc["content"][year] or language not in content_doc["content"][year][term] or subject not in content_doc["content"][year][term][language]:
+        return []
+
+    content = content_doc["content"][year][term][language][subject]
+    lessons_data = content.get("lessons", {})
+    chapters_data = content.get("chapters", {})
+    
+    lessons = []
+    for lesson_id, lesson_data in lessons_data.items():
+        price_str = lesson_data.get("price", "0 جنية").split()[0]
+        try:
+            price_val = float(price_str)
+        except (ValueError, IndexError):
+            price_val = 0.0
+
+        chapter_title = chapters_data.get(str(lesson_data.get("chapter_id")), {}).get("title")
+
+        lessons.append(LessonResponseV2(
+            id=str(lesson_id),
+            title=lesson_data.get("title"),
+            description=lesson_data.get("description", ""),
+            vimeo_embed_src=lesson_data.get("vimeo_embed_src"),
+            image_url=lesson_data.get("image_url"),
+            price=price_val,
+            hours=lesson_data.get("hours", 0),
+            lecture=lesson_data.get("lecture", ""),
+            course=f"{chapter_title} ({lesson_data.get('chapter_id')})" if chapter_title else ""
+        ))
+    return lessons
 
 ############ GET chapters lessons ################
 
 @app.get("/chapters/{chapter_id}", response_model=List[LessonResponseV2])
-async def get_chapter_lessons(chapter_id: int):
+async def get_chapter_lessons(chapter_id: int, edu_collection: AsyncIOMotorCollection = Depends(get_educational_content_collection)):
     lessons = []
     found_lessons = False
     chapter_title = None
 
+    edu_doc = await edu_collection.find_one({"content": {"$exists": True}})
+    if not edu_doc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Educational content not found.")
+    content = edu_doc.get("content", {})
+    
     # Find the chapter title first
-    for year_data in EDUCATIONAL_CONTENT.values():
+    for year_data in content.values():
         for term_data in year_data.values():
             for lang_data in term_data.values():
                 for subject_data in lang_data.values():
-                    if chapter_id in subject_data.get("chapters", {}):
-                        chapter_title = subject_data["chapters"][chapter_id]["title"]
+                    if str(chapter_id) in subject_data.get("chapters", {}):
+                        chapter_title = subject_data["chapters"][str(chapter_id)]["title"]
                         break
                 if chapter_title:
                     break
@@ -606,7 +411,7 @@ async def get_chapter_lessons(chapter_id: int):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Chapter not found.")
 
     # Iterate through content to find lessons for the specified chapter
-    for year in EDUCATIONAL_CONTENT.values():
+    for year in content.values():
         for term in year.values():
             for language in term.values():
                 for subject in language.values():
@@ -641,86 +446,149 @@ async def get_chapter_lessons(chapter_id: int):
         
     return lessons
 
-############ GET chapters details ################
+# --- GET Lesson Details
+@app.get("/lessons/{lesson_id}", response_model=LessonResponseV2)
+async def get_lesson_details(lesson_id: int, edu_collection: AsyncIOMotorCollection = Depends(get_educational_content_collection)):
+    edu_doc = await edu_collection.find_one({"content": {"$exists": True}})
+    if not edu_doc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Educational content not found.")
+    content = edu_doc.get("content", {})
+    
+    lesson_summary = None
+    chapter_title = None
 
-@app.get("/lessons/{lesson_id}", response_model=LessonDetailResponse)
-async def get_lesson_details(lesson_id: int):
-    lesson_summary, lesson_details = None, None
-    for year in EDUCATIONAL_CONTENT.values():
+    for year in content.values():
         for term in year.values():
             for language in term.values():
                 for subject in language.values():
-                    if lesson_id in subject.get("lessons", {}): lesson_summary = subject["lessons"][lesson_id]
-                    if lesson_id in subject.get("lesson_details", {}): lesson_details = subject["lesson_details"][lesson_id]
-    if not lesson_summary or not lesson_details: raise HTTPException(status.HTTP_404_NOT_FOUND, "Lesson not found.")
-    full_lesson_data = {"id": lesson_id, "image": courseImg, **lesson_summary, **lesson_details}
-    return LessonDetailResponse(**full_lesson_data)
+                    if str(lesson_id) in subject.get("lessons", {}): 
+                        lesson_summary = subject["lessons"][str(lesson_id)]
+                        chapter_title = subject.get("chapters", {}).get(str(lesson_summary.get("chapter_id")), {}).get("title")
+                        break
+                if lesson_summary:
+                    break
+            if lesson_summary:
+                break
+    
+    if not lesson_summary: 
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Lesson not found.")
+
+    price_str = lesson_summary.get("price", "0 جنية").split()[0]
+    try:
+        price_val = float(price_str)
+    except (ValueError, IndexError):
+        price_val = 0.0
+    
+    course_string = f"{chapter_title} ({lesson_summary.get('chapter_id')})" if chapter_title else ""
+    lecture_string = f"Lecture {lesson_id}"
+
+    return LessonResponseV2(
+        id=str(lesson_id),
+        title=lesson_summary.get("title"),
+        description=lesson_summary.get("description", ""),
+        vimeo_embed_src=lesson_summary.get("vimeo_embed_src"),
+        image_url=lesson_summary.get("image_url"),
+        price=price_val,
+        hours=lesson_summary.get("hours", 0),
+        lecture=lecture_string,
+        course=course_string
+    )
+
+
 
 
 ############ GET Free Chapters ################
-@app.get("/homepage/{year}/{term}/{language}/{subject}/free", response_model=List[ChapterSummaryResponse])
-async def get_free_chapters(year: str, term: str, language: str, subject: str):
-    try:
-        content = EDUCATIONAL_CONTENT[year][term][language][subject]
-        chapters_data = content.get("chapters", {})
-        lessons_data = content.get("lessons", {})
-    except KeyError:
+@app.get("/homepage/{year}/{term}/{language}/{subject}/free", response_model=List[LessonResponseV2])
+async def get_free_chapters(year: str, term: str, language: str, subject: str, edu_collection: AsyncIOMotorCollection = Depends(get_educational_content_collection)):
+    content_doc = await edu_collection.find_one({"content": {"$exists": True}})
+    if not content_doc or year not in content_doc["content"] or term not in content_doc["content"][year] or language not in content_doc["content"][year][term] or subject not in content_doc["content"][year][term][language]:
         return []
 
-    free_chapter_ids = {
-        lesson['chapter_id']
-        for lesson in lessons_data.values()
-        if lesson.get('isFree', False)
-    }
+    content = content_doc["content"][year][term][language][subject]
+    lessons_data = content.get("lessons", {})
+    chapters_data = content.get("chapters", {})
 
-    response = [
-        ChapterSummaryResponse(id=cid, image=courseImg, variant="chapter", **cdata)
-        for cid, cdata in chapters_data.items()
-        if cid in free_chapter_ids
-    ]
-    return response
+    free_lessons = []
+    for lesson_id, lesson_data in lessons_data.items():
+        if lesson_data.get('isFree', False):
+            price_str = lesson_data.get("price", "0 جنية").split()[0]
+            try:
+                price_val = float(price_str)
+            except (ValueError, IndexError):
+                price_val = 0.0
+            
+            chapter_title = chapters_data.get(str(lesson_data.get("chapter_id")), {}).get("title")
+
+            free_lessons.append(LessonResponseV2(
+                id=str(lesson_id),
+                title=lesson_data.get("title"),
+                description=lesson_data.get("description", ""),
+                vimeo_embed_src=lesson_data.get("vimeo_embed_src"),
+                image_url=lesson_data.get("image_url"),
+                price=price_val,
+                hours=lesson_data.get("hours", 0),
+                lecture=lesson_data.get("lecture", ""),
+                course=f"{chapter_title} ({lesson_data.get('chapter_id')})" if chapter_title else ""
+            ))
+    return free_lessons
 
 ############ GET Paid Chapters ################
-@app.get("/homepage/{year}/{term}/{language}/{subject}/paid", response_model=List[ChapterSummaryResponse])
-async def get_paid_chapters(year: str, term: str, language: str, subject: str):
-    try:
-        content = EDUCATIONAL_CONTENT[year][term][language][subject]
-        chapters_data = content.get("chapters", {})
-        lessons_data = content.get("lessons", {})
-    except KeyError:
+@app.get("/homepage/{year}/{term}/{language}/{subject}/paid", response_model=List[LessonResponseV2])
+async def get_paid_chapters(year: str, term: str, language: str, subject: str, edu_collection: AsyncIOMotorCollection = Depends(get_educational_content_collection)):
+    content_doc = await edu_collection.find_one({"content": {"$exists": True}})
+    if not content_doc or year not in content_doc["content"] or term not in content_doc["content"][year] or language not in content_doc["content"][year][term] or subject not in content_doc["content"][year][term][language]:
         return []
 
-    free_chapter_ids = {
-        lesson['chapter_id']
-        for lesson in lessons_data.values()
-        if lesson.get('isFree', False)
-    }
+    content = content_doc["content"][year][term][language][subject]
+    lessons_data = content.get("lessons", {})
+    chapters_data = content.get("chapters", {})
 
-    response = [
-        ChapterSummaryResponse(id=cid, image=courseImg, variant="chapter", **cdata)
-        for cid, cdata in chapters_data.items()
-        if cid not in free_chapter_ids
-    ]
-    return response
+    paid_lessons = []
+    for lesson_id, lesson_data in lessons_data.items():
+        if not lesson_data.get('isFree', False):
+            price_str = lesson_data.get("price", "0 جنية").split()[0]
+            try:
+                price_val = float(price_str)
+            except (ValueError, IndexError):
+                price_val = 0.0
+
+            chapter_title = chapters_data.get(str(lesson_data.get("chapter_id")), {}).get("title")
+
+            paid_lessons.append(LessonResponseV2(
+                id=str(lesson_id),
+                title=lesson_data.get("title"),
+                description=lesson_data.get("description", ""),
+                vimeo_embed_src=lesson_data.get("vimeo_embed_src"),
+                image_url=lesson_data.get("image_url"),
+                price=price_val,
+                hours=lesson_data.get("hours", 0),
+                lecture=lesson_data.get("lecture", ""),
+                course=f"{chapter_title} ({lesson_data.get('chapter_id')})" if chapter_title else ""
+            ))
+    return paid_lessons
 
 
 
 # --- BOOKS ENDPOINT ---
 @app.get("/books", response_model=List[BookResponse])
-async def get_books():
-    return BOOKS_DATA
+async def get_books(books_collection: AsyncIOMotorCollection = Depends(get_books_collection)):
+    books = await books_collection.find().to_list(1000)
+    # Pydantic will handle the mapping from _id to id if necessary
+    return books
 
 @app.post("/dashboard/buy-item", response_model=ReceiptResponse)
 async def buy_item(
     purchase_data: ItemPurchaseRequest,
     current_student: dict = Depends(get_current_student),
-    receipt_collection: AsyncIOMotorCollection = Depends(get_receipt_collection)
+    receipt_collection: AsyncIOMotorCollection = Depends(get_receipt_collection),
+    edu_collection: AsyncIOMotorCollection = Depends(get_educational_content_collection)
 ):
     """
     Simulates a student buying an item. In a real app, this would
     involve a payment gateway. Here, it just creates a receipt.
     """
-    item_details = find_item_in_content_by_id(int(purchase_data.item_id))
+    # Fetch item details from the database
+    item_details = await find_item_in_content_by_id(int(purchase_data.item_id))
     if not item_details:
         raise HTTPException(status_code=404, detail=f"{purchase_data.item_type} with ID {purchase_data.item_id} not found")
 
@@ -741,52 +609,83 @@ async def buy_item(
     return created_receipt
 
 
-@app.get("/dashboard/my-chapters", response_model=List[ChapterSummaryResponse])
+@app.get("/dashboard/my-chapters", response_model=List[LessonResponseV2])
 async def get_my_chapters(
     current_student: dict = Depends(get_current_student),
-    receipt_collection: AsyncIOMotorCollection = Depends(get_receipt_collection)
+    receipt_collection: AsyncIOMotorCollection = Depends(get_receipt_collection),
+    edu_collection: AsyncIOMotorCollection = Depends(get_educational_content_collection)
 ):
     """
-    Gets all chapters the authenticated student has paid for by
-    checking their receipts.
+    Gets all lessons belonging to the chapters the authenticated student
+    has paid for by checking their receipts.
     """
     receipts_cursor = receipt_collection.find({
         "student_code": current_student["student_code"],
         "receipt_type": "package_purchase"
     })
     receipts = await receipts_cursor.to_list(length=1000)
-    purchased_item_ids = {int(r["item_id"]) for r in receipts}
+    purchased_chapter_ids = {int(r["item_id"]) for r in receipts}
 
-    # Find all chapter details that match the purchased IDs
-    my_chapters = []
-    for year in EDUCATIONAL_CONTENT.values():
+    edu_doc = await edu_collection.find_one({"content": {"$exists": True}})
+    if not edu_doc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Educational content not found.")
+    content = edu_doc.get("content", {})
+
+    my_lessons = []
+    for year in content.values():
         for term in year.values():
             for language in term.values():
                 for subject in language.values():
-                    for cid, cdata in subject.get("chapters", {}).items():
-                        if cid in purchased_item_ids:
-                            my_chapters.append(
-                                ChapterSummaryResponse(id=cid, image=courseImg, variant="chapter", **cdata)
-                            )
-    return my_chapters
+                    # Check if the lessons exist in the subject dictionary
+                    for lesson_id, lesson_data in subject.get("lessons", {}).items():
+                        # The database stores IDs as strings, so convert for comparison
+                        if int(lesson_data.get("chapter_id")) in purchased_chapter_ids:
+                            # Safely extract the price and convert to float
+                            price_str = lesson_data.get("price", "0 جنية").split()[0]
+                            try:
+                                price_val = float(price_str)
+                            except (ValueError, IndexError):
+                                price_val = 0.0
 
+                            # Get the chapter title for the 'course' field
+                            chapter_title = subject.get("chapters", {}).get(str(lesson_data.get("chapter_id")), {}).get("title")
+
+                            # Append the lesson to the list using the desired schema
+                            my_lessons.append(LessonResponseV2(
+                                id=str(lesson_id),
+                                title=lesson_data.get("title"),
+                                description=lesson_data.get("description", ""),
+                                vimeo_embed_src=lesson_data.get("vimeo_embed_src"),
+                                image_url=lesson_data.get("image_url"),
+                                price=price_val,
+                                hours=lesson_data.get("hours", 0),
+                                lecture=lesson_data.get("lecture", ""),
+                                course=f"{chapter_title} ({lesson_data.get('chapter_id')})" if chapter_title else ""
+                            ))
+                            
+    return my_lessons
 
 @app.get("/dashboard/my-tests", response_model=List[TestResultResponse])
-async def get_my_tests(current_student: dict = Depends(get_current_student)):
+async def get_my_tests(
+    current_student: dict = Depends(get_current_student),
+    tests_collection: AsyncIOMotorCollection = Depends(get_mock_test_results_collection)
+):
     """
     Gets a list of all tests the student has completed.
     This currently uses mock data.
     """
     student_code = current_student.get("student_code")
     # In a real app, you would query your database for test results.
-    return MOCK_TEST_RESULTS.get(student_code, [])
+    tests = await tests_collection.find({"student_code": student_code}).to_list(1000)
+    return tests
 
 
 
 @app.post("/dashboard/add-test-result", response_model=TestResultResponse)
 async def add_test_result(
     test_data: AddTestResultRequest,
-    current_student: dict = Depends(get_current_student)
+    current_student: dict = Depends(get_current_student),
+    tests_collection: AsyncIOMotorCollection = Depends(get_mock_test_results_collection)
 ):
     """
     Adds a new test result to the student's record.
@@ -798,32 +697,36 @@ async def add_test_result(
 
     # In a real app, you would save this to your database.
     # Here, we add it to our mock dictionary.
-    if student_code not in MOCK_TEST_RESULTS:
-        MOCK_TEST_RESULTS[student_code] = []
+    
+    # Get the count of existing test results for this student to determine the new ID
+    # This is a simplified approach for the mock data, a real database would have its own ID mechanism
+    last_test = await tests_collection.find({"student_code": student_code}).sort([("id", -1)]).limit(1).to_list(1)
+    new_test_id = (last_test[0]["id"] + 1) if last_test else 1
 
-    new_test_id = len(MOCK_TEST_RESULTS[student_code]) + 1
     new_test_result = {
         "id": new_test_id,
         "test_name": test_data.test_name,
         "score": test_data.score,
         "date_taken": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
         "review_link": f"/api/tests/review/{new_test_id}",
-        "download_link": f"/api/tests/download/{new_test_id}"
+        "download_link": f"/api/tests/download/{new_test_id}",
+        "student_code": student_code
     }
-
-    MOCK_TEST_RESULTS[student_code].append(new_test_result)
     
-    return new_test_result
+    await tests_collection.insert_one(new_test_result)
+    
+    return TestResultResponse(**new_test_result)
 
 @app.post("/dashboard/favorites/add", status_code=status.HTTP_201_CREATED)
 async def add_favorite_video(
     fav_request: FavoriteVideoRequest,
     current_student: dict = Depends(get_current_student),
-    favorites_collection: AsyncIOMotorCollection = Depends(get_favorite_videos_collection)
+    favorites_collection: AsyncIOMotorCollection = Depends(get_favorite_videos_collection),
+    videos_collection: AsyncIOMotorCollection = Depends(get_mock_videos_collection)
 ):
     """Adds a video to the current student's favorites."""
     video_id = fav_request.video_id
-    if video_id not in MOCK_VIDEOS:
+    if not await videos_collection.find_one({"id": video_id}):
         raise HTTPException(status_code=404, detail="Video not found")
 
     student_id = current_student["_id"]
@@ -844,7 +747,8 @@ async def add_favorite_video(
 @app.get("/dashboard/favorites", response_model=List[VideoResponse])
 async def get_my_favorite_videos(
     current_student: dict = Depends(get_current_student),
-    favorites_collection: AsyncIOMotorCollection = Depends(get_favorite_videos_collection)
+    favorites_collection: AsyncIOMotorCollection = Depends(get_favorite_videos_collection),
+    videos_collection: AsyncIOMotorCollection = Depends(get_mock_videos_collection)
 ):
     """Gets a list of the current student's favorite videos."""
     student_id = current_student["_id"]
@@ -852,9 +756,10 @@ async def get_my_favorite_videos(
     favorites_cursor = favorites_collection.find({"student_id": student_id})
     favorite_records = await favorites_cursor.to_list(length=1000)
     
-    # Get the full details for each favorited video ID
+    # Get the full details for each favorited video ID from the database
     video_ids = [fav["video_id"] for fav in favorite_records]
-    favorite_videos = [MOCK_VIDEOS[vid_id] for vid_id in video_ids if vid_id in MOCK_VIDEOS]
+    
+    favorite_videos = await videos_collection.find({"id": {"$in": video_ids}}).to_list(1000)
     
     return favorite_videos
 
@@ -864,7 +769,9 @@ async def get_my_favorite_videos(
 async def get_parent_dashboard(
     login_data: ParentLoginRequest,
     student_collection: AsyncIOMotorCollection = Depends(get_student_collection),
-    receipt_collection: AsyncIOMotorCollection = Depends(get_receipt_collection)
+    receipt_collection: AsyncIOMotorCollection = Depends(get_receipt_collection),
+    tests_collection: AsyncIOMotorCollection = Depends(get_mock_test_results_collection),
+    edu_collection: AsyncIOMotorCollection = Depends(get_educational_content_collection)
 ):
     """
     Provides a comprehensive dashboard for a parent by verifying
@@ -884,11 +791,11 @@ async def get_parent_dashboard(
 
     student_code = student.get("student_code")
 
-    # 2. Get the student's test results
-    # In a real app, you would query your database for test results.
-    test_results = MOCK_TEST_RESULTS.get(student_code, [])
+    # 2. Get the student's test results from the database
+    tests_cursor = tests_collection.find({"student_code": student_code})
+    test_results = await tests_cursor.to_list(length=1000)
 
-    # 3. Get the student's purchased chapters
+    # 3. Get the student's purchased chapters from the database
     receipts_cursor = receipt_collection.find({
         "student_code": student_code,
         "receipt_type": "package_purchase"
@@ -896,16 +803,19 @@ async def get_parent_dashboard(
     receipts = await receipts_cursor.to_list(length=1000)
     purchased_item_ids = {int(r["item_id"]) for r in receipts}
 
+    edu_doc = await edu_collection.find_one({"content": {"$exists": True}})
     purchased_chapters = []
-    for year in EDUCATIONAL_CONTENT.values():
-        for term in year.values():
-            for language in term.values():
-                for subject in language.values():
-                    for cid, cdata in subject.get("chapters", {}).items():
-                        if cid in purchased_item_ids:
-                            purchased_chapters.append(
-                                ChapterSummaryResponse(id=cid, image=courseImg, variant="chapter", **cdata)
-                            )
+    if edu_doc:
+        content = edu_doc.get("content", {})
+        for year in content.values():
+            for term in year.values():
+                for language in term.values():
+                    for subject in language.values():
+                        for cid, cdata in subject.get("chapters", {}).items():
+                            if int(cid) in purchased_item_ids:
+                                purchased_chapters.append(
+                                    ChapterSummaryResponse(id=int(cid), image=courseImg, variant="chapter", **cdata)
+                                )
     
     student = format_student_grade(student)
     # 4. Assemble and return the complete dashboard response
@@ -916,236 +826,6 @@ async def get_parent_dashboard(
     )
 
 # --- TESTING PAGE ---
-@app.get("/try", response_class=HTMLResponse)
-async def get_test_frontend():
-    html_content = """
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>API Tester</title>
-    <style>
-        body { font-family: sans-serif; margin: 40px; background-color: #f4f7f6; color: #333; }
-        .container { max-width: 800px; margin: auto; }
-        h1, h2, h3 { color: #0056b3; }
-        h2 { border-bottom: 2px solid #0056b3; padding-bottom: 10px; margin-top: 30px;}
-        form { display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; background-color: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        input, button, select { padding: 12px; font-size: 16px; border-radius: 5px; border: 1px solid #ccc; }
-        button { cursor: pointer; background-color: #007bff; color: white; border: none; font-weight: bold; }
-        button:hover { background-color: #0056b3; }
-        #logoutBtn { background-color: #dc3545; }
-        #logoutBtn:hover { background-color: #c82333; }
-        pre { background-color: #2b2b2b; color: #f8f8f2; padding: 15px; white-space: pre-wrap; word-wrap: break-word; border-radius: 8px; }
-        .grid-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>🚀 API Tester</h1>
-        <div>
-            <h2>Tokens</h2>
-            <label>Access Token:</label><br>
-            <input type="text" id="accessToken" style="width: 100%;">
-        </div>
-        
-        <h2>👪 Parent Portal</h2>
-        <form id="parentLoginForm">
-            <h3>Get Student Dashboard</h3>
-            <input type="text" id="studentPhone" placeholder="Student Phone Number" value="0101122334455">
-            <input type="text" id="parentPhone" placeholder="Parent Phone Number" value="01166778899">
-            <button type="submit">Login as Parent</button>
-        </form>
-
-        <h2>📚 Educational Content</h2>
-        <form id="contentForm">
-            <h3>Get Homepage Chapters</h3>
-            <select id="year"><option value="1">1st Year</option><option value="2">2nd Year</option><option value="3">3rd Year</option></select>
-            <select id="term"><option value="term1">Term 1</option><option value="term2">Term 2</option></select>
-            <select id="language"><option value="arabic">Arabic</option><option value="english">English</option></select>
-            <select id="subject"><option value="biology">Biology</option></select>
-            <div class="grid-buttons">
-                <button type="submit">Get All Chapters</button>
-                <button type="button" id="getFreeChaptersBtn">Get Free Chapters</button>
-                <button type="button" id="getPaidChaptersBtn">Get Paid Chapters</button>
-                <button type="button" id="getBooksBtn">Get Books</button>
-            </div>
-        </form>
-        <form id="chapterForm">
-            <h3>Get Lessons in a Chapter</h3>
-            <input type="number" id="chapterId" placeholder="Chapter ID (e.g., 101, 211, 321)">
-            <button type="submit">Get Lessons</button>
-        </form>
-        <form id="lessonForm">
-            <h3>Get Lesson Details</h3>
-            <input type="number" id="lessonId" placeholder="Lesson ID (e.g., 10101, 22101, 33101)">
-            <button type="submit">Get Details</button>
-        </form>
-
-        <h2>👤 User Management</h2>
-        <form id="registerForm">
-            <h3>Register</h3>
-            <input type="email" id="regEmail" placeholder="Email" value="user-test@example.com">
-            <input type="password" id="regPassword" placeholder="Password" value="password123">
-            <input type="password" id="regConfirmPassword" placeholder="Confirm Password" value="password123">
-            <input type="text" id="regName" placeholder="Name" value="Test User">
-            <input type="text" id="regPhone" placeholder="Phone (must be unique)" value="0101122334455">
-            <input type="text" id="regParentPhone" placeholder="Parent Phone" value="01166778899">
-            <input type="text" id="regCity" placeholder="City" value="Cairo">
-            <input type="text" id="regGrade" placeholder="Grade" value="12">
-            <input type="text" id="regLang" placeholder="Language" value="en">
-            <button type="submit">Register</button>
-        </form>
-        <form id="loginForm">
-            <h3>Login</h3>
-            <input type="text" id="loginIdentifier" placeholder="Email or Phone" value="user-test@example.com">
-            <input type="password" id="loginPassword" placeholder="Password" value="password123">
-            <button type="submit">Login</button>
-        </form>
-
-        <h2>🔑 Password Reset</h2>
-        <form id="forgotPasswordForm">
-            <h3>1. Request Reset Code</h3>
-            <input type="email" id="forgotEmail" placeholder="Enter registered email" value="user-test@example.com">
-            <button type="submit">Send Code</button>
-        </form>
-        <form id="verifyCodeForm">
-            <h3>2. Verify Code</h3>
-            <input type="email" id="verifyEmail" placeholder="Enter email again" value="user-test@example.com">
-            <input type="text" id="resetCode" placeholder="5-digit code from email">
-            <button type="submit">Verify Code & Get Reset Token</button>
-        </form>
-        <form id="resetPasswordForm">
-            <h3>3. Reset Password</h3>
-            <input type="text" id="resetToken" placeholder="Reset Token from step 2">
-            <input type="password" id="newPassword" placeholder="New Password">
-            <button type="submit">Reset Password</button>
-        </form>
-
-        <h2>🎓 Student Dashboard</h2>
-        <form id="buyItemForm">
-             <h3>Buy Chapter</h3>
-             <input type="text" id="buyItemId" placeholder="Chapter ID to buy (e.g. 101)">
-             <button type="submit">Buy Item</button>
-        </form>
-        <form id="addTestResultForm">
-            <h3>Add Test Result</h3>
-            <input type="text" id="testName" placeholder="Test Name (e.g., Chapter 1 Quiz)" value="Final Exam Practice">
-            <input type="text" id="testScore" placeholder="Score (e.g., 95%)" value="88%">
-            <button type="submit">Add Result</button>
-        </form>
-         <form id="addFavoriteForm">
-            <h3>Add Favorite Video</h3>
-            <input type="number" id="videoId" placeholder="Video ID (e.g., 1, 2, 3)" value="1">
-            <button type="submit">Add Favorite</button>
-        </form>
-        <div class="grid-buttons">
-            <button id="getMyChaptersBtn">Get My Chapters</button>
-            <button id="getMyTestsBtn">Get My Tests</button>
-            <button id="getFavoritesBtn">Get My Favorite Videos</button>
-        </div>
-
-
-        <h2>🔒 Authenticated Actions</h2>
-        <div class="grid-buttons">
-            <button id="getProfileBtn">Get Profile</button>
-            <button id="refreshTokenBtn">Refresh Tokens</button>
-            <button id="logoutBtn">Logout</button>
-        </div>
-
-        <h2>📜 Receipts</h2>
-        <form id="addReceiptForm">
-            <h3>Add Receipt (Admin Action)</h3>
-            <input type="text" id="receiptStudentCode" placeholder="Student Code">
-            <select id="receiptType">
-                <option value="package_purchase">Package Purchase</option>
-                <option value="balance_charge">Balance Charge</option>
-            </select>
-            <input type="text" id="itemId" placeholder="Item ID (e.g., 'PHYSICS_PKG_1')">
-            <input type="number" id="receiptAmount" placeholder="Amount">
-            <input type="text" id="receiptDesc" placeholder="Description">
-            <button type="submit">Add Receipt</button>
-        </form>
-        <form id="getReceiptsForm">
-            <h3>Get Receipts by Student Code</h3>
-            <input type="text" id="getReceiptsStudentCode" placeholder="Student Code">
-            <button type="submit">Get Receipts</button>
-        </form>
-
-        <h2>📊 API Response</h2>
-        <pre id="responseOutput">Response will be shown here...</pre>
-    </div>
-
-    <script>
-        const responseOutput = document.getElementById('responseOutput');
-        const accessTokenInput = document.getElementById('accessToken');
-        const resetTokenInput = document.getElementById('resetToken');
-
-        const apiCall = async (endpoint, method = 'GET', body = null) => {
-            const headers = { 'Content-Type': 'application/json' };
-            if (accessTokenInput.value && !endpoint.startsWith('/parent')) { // Don't send token for parent login
-                headers['Authorization'] = `Bearer ${accessTokenInput.value}`;
-            }
-            try {
-                const options = { method, headers, credentials: 'include' };
-                if (body) {
-                    options.body = JSON.stringify(body);
-                }
-                const response = await fetch(endpoint, options);
-                const data = await response.json();
-                responseOutput.textContent = JSON.stringify(data, null, 2);
-
-                if (data.access_token) { accessTokenInput.value = data.access_token; }
-                if (data.reset_token) { resetTokenInput.value = data.reset_token; }
-
-            } catch (error) {
-                responseOutput.textContent = `Error: ${error.message}`;
-            }
-        };
-
-        const getContentPath = () => {
-            const year = document.getElementById('year').value;
-            const term = document.getElementById('term').value;
-            const language = document.getElementById('language').value;
-            const subject = document.getElementById('subject').value;
-            return `/homepage/${year}/${term}/${language}/${subject}`;
-        };
-
-        // Parent Listener
-        document.getElementById('parentLoginForm').addEventListener('submit', e => { e.preventDefault(); apiCall('/parent/dashboard', 'POST', { student_phone: document.getElementById('studentPhone').value, parent_phone: document.getElementById('parentPhone').value }); });
-
-        // Content Listeners
-        document.getElementById('contentForm').addEventListener('submit', e => { e.preventDefault(); apiCall(getContentPath(), 'GET'); });
-        document.getElementById('getFreeChaptersBtn').addEventListener('click', () => apiCall(`${getContentPath()}/free`, 'GET'));
-        document.getElementById('getPaidChaptersBtn').addEventListener('click', () => apiCall(`${getContentPath()}/paid`, 'GET'));
-        document.getElementById('getBooksBtn').addEventListener('click', () => apiCall('/books', 'GET'));
-        document.getElementById('chapterForm').addEventListener('submit', e => { e.preventDefault(); const chapterId = document.getElementById('chapterId').value; if (chapterId) apiCall(`/chapters/${chapterId}`, 'GET'); });
-        document.getElementById('lessonForm').addEventListener('submit', e => { e.preventDefault(); const lessonId = document.getElementById('lessonId').value; if (lessonId) apiCall(`/lessons/${lessonId}`, 'GET'); });
-
-        // User & Auth Listeners
-        document.getElementById('registerForm').addEventListener('submit', e => { e.preventDefault(); apiCall('/register', 'POST', { name: document.getElementById('regName').value, phone: document.getElementById('regPhone').value, email: document.getElementById('regEmail').value, parent_phone: document.getElementById('regParentPhone').value, city: document.getElementById('regCity').value, grade: document.getElementById('regGrade').value, lang: document.getElementById('regLang').value, password: document.getElementById('regPassword').value, confirm_password: document.getElementById('regConfirmPassword').value }); });
-        document.getElementById('loginForm').addEventListener('submit', e => { e.preventDefault(); apiCall('/login', 'POST', { identifier: document.getElementById('loginIdentifier').value, password: document.getElementById('loginPassword').value }); });
-        document.getElementById('forgotPasswordForm').addEventListener('submit', e => { e.preventDefault(); apiCall('/forgot-password', 'POST', { email: document.getElementById('forgotEmail').value }); });
-        document.getElementById('verifyCodeForm').addEventListener('submit', e => { e.preventDefault(); apiCall('/verify-reset-code', 'POST', { email: document.getElementById('verifyEmail').value, code: document.getElementById('resetCode').value }); });
-        document.getElementById('resetPasswordForm').addEventListener('submit', e => { e.preventDefault(); apiCall('/reset-password', 'POST', { token: document.getElementById('resetToken').value, new_password: document.getElementById('newPassword').value }); });
-        
-        // Authenticated Actions
-        document.getElementById('getProfileBtn').addEventListener('click', () => apiCall('/student/profile', 'GET'));
-        document.getElementById('refreshTokenBtn').addEventListener('click', () => apiCall('/token/refresh', 'POST'));
-        document.getElementById('logoutBtn').addEventListener('click', () => { apiCall('/logout', 'POST'); accessTokenInput.value = ''; });
-
-        // Dashboard Listeners
-        document.getElementById('buyItemForm').addEventListener('submit', e => { e.preventDefault(); const itemId = document.getElementById('buyItemId').value; if(itemId) apiCall('/dashboard/buy-item', 'POST', { item_id: itemId, item_type: 'chapter' }); });
-        document.getElementById('addTestResultForm').addEventListener('submit', e => { e.preventDefault(); apiCall('/dashboard/add-test-result', 'POST', { test_name: document.getElementById('testName').value, score: document.getElementById('testScore').value }); });
-        document.getElementById('addFavoriteForm').addEventListener('submit', e => { e.preventDefault(); const videoId = document.getElementById('videoId').value; if(videoId) apiCall('/dashboard/favorites/add', 'POST', { video_id: parseInt(videoId) }); });
-        document.getElementById('getMyChaptersBtn').addEventListener('click', () => apiCall('/dashboard/my-chapters', 'GET'));
-        document.getElementById('getMyTestsBtn').addEventListener('click', () => apiCall('/dashboard/my-tests', 'GET'));
-        document.getElementById('getFavoritesBtn').addEventListener('click', () => apiCall('/dashboard/favorites', 'GET'));
-
-        // Receipt Listeners
-        document.getElementById('addReceiptForm').addEventListener('submit', e => { e.preventDefault(); apiCall('/receipts', 'POST', { student_code: document.getElementById('receiptStudentCode').value, receipt_type: document.getElementById('receiptType').value, item_id: document.getElementById('itemId').value, amount: parseFloat(document.getElementById('receiptAmount').value), description: document.getElementById('receiptDesc').value }); });
-        document.getElementById('getReceiptsForm').addEventListener('submit', e => { e.preventDefault(); const studentCode = document.getElementById('getReceiptsStudentCode').value; if(studentCode) apiCall(`/receipts/${studentCode}`, 'GET'); });
-    </script>
-</body>
-</html>
-    """
-    return HTMLResponse(content=html_content)
+@app.get("/try", response_class=FileResponse)
+def get_test_frontend():
+    return FileResponse("try.html", media_type="text/html")

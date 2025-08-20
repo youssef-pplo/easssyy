@@ -69,3 +69,19 @@ async def get_favorite_videos_collection():
     database = await get_database()
     return database.get_collection("favorite_videos")
 
+# NEW: Functions to get collections for mock data
+async def get_educational_content_collection():
+    database = await get_database()
+    return database.get_collection("educational_content")
+
+async def get_books_collection():
+    database = await get_database()
+    return database.get_collection("books")
+
+async def get_mock_test_results_collection():
+    database = await get_database()
+    return database.get_collection("mock_test_results")
+
+async def get_mock_videos_collection():
+    database = await get_database()
+    return database.get_collection("mock_videos")
