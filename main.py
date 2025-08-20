@@ -24,7 +24,11 @@ from database import (
     get_educational_content_collection,
     get_books_collection,
     get_mock_test_results_collection,
-    get_mock_videos_collection
+    get_mock_videos_collection,
+    get_admins_collection,
+    get_teachers_collection,
+    get_payments_collection,
+    get_paymob_logs_collection
 )
 from schemas import (
     RegisterRequest, LoginRequest, TokenResponse, RefreshTokenResponse,
@@ -38,7 +42,12 @@ from schemas import (
     LessonResponseV2,
     # New Admin Schemas
     AdminLoginRequest, AdminTokenResponse, ContentUpdate,
-    BookCreateRequest, BookUpdateRequest
+    BookCreateRequest, BookUpdateRequest,
+    AdminRegisterRequest, AdminProfileResponse,
+    ChapterCreateRequest, ChapterUpdateRequest,
+    LessonCreateRequest, LessonUpdateRequest,
+    PaymentInitiateRequest, PaymentInitiateResponse, PaymentStatusResponse,
+    TeacherCreateRequest, TeacherLoginRequest, TeacherProfileResponse, TeacherUpdateRequest
 )
 from motor.motor_asyncio import AsyncIOMotorCollection
 
@@ -111,6 +120,13 @@ def generate_student_code(): return ''.join(random.choices(string.ascii_uppercas
 def decode_token(token: str):
     try: return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
     except JWTError: return None
+
+# --- Role-based token helpers ---
+def create_admin_access_token(admin_id: str):
+    return create_token({"sub": admin_id, "role": "admin"}, timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
+
+def create_teacher_access_token(teacher_id: str):
+    return create_token({"sub": teacher_id, "role": "teacher"}, timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
 def send_password_reset_email(email: str, code: str):
     msg = MIMEText(f"Your password reset code is: {code}\nIt is valid for 10 minutes.")
     msg['Subject'], msg['From'], msg['To'] = 'Your Password Reset Code', SMTP_USERNAME, email
@@ -127,6 +143,24 @@ async def get_current_student(token: str = Depends(oauth2_scheme), student_colle
     student = await student_collection.find_one({"_id": ObjectId(sub)})
     if not student: raise HTTPException(status.HTTP_404_NOT_FOUND, "Student not found")
     return student
+
+async def get_current_admin(token: str = Depends(oauth2_scheme), admins: AsyncIOMotorCollection = Depends(get_admins_collection)):
+    payload = decode_token(token)
+    if not payload or payload.get("role") != "admin" or not (sub := payload.get("sub")):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid admin token")
+    admin = await admins.find_one({"_id": ObjectId(sub)})
+    if not admin:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Admin not found")
+    return admin
+
+async def get_current_teacher(token: str = Depends(oauth2_scheme), teachers: AsyncIOMotorCollection = Depends(get_teachers_collection)):
+    payload = decode_token(token)
+    if not payload or payload.get("role") != "teacher" or not (sub := payload.get("sub")):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid teacher token")
+    teacher = await teachers.find_one({"_id": ObjectId(sub)})
+    if not teacher:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Teacher not found")
+    return teacher
 
 # Add a new helper function to find content details
 async def find_item_in_content_by_id(item_id_to_find: int):
@@ -149,6 +183,533 @@ async def find_item_in_content_by_id(item_id_to_find: int):
 # --- API Endpoints ---
 @app.get("/")
 def root(): return {"status": "ok"}
+
+# ----------------------
+# ADMIN AUTH ENDPOINTS
+# ----------------------
+
+@app.post("/admin/register", response_model=AdminProfileResponse)
+async def admin_register(
+    data: AdminRegisterRequest,
+    admins: AsyncIOMotorCollection = Depends(get_admins_collection)
+):
+    existing = await admins.find_one({"email": data.email})
+    if existing:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Admin already exists")
+    admin_doc = {
+        "email": data.email,
+        "password": hash_password(data.password),
+        "name": data.name,
+        "role": data.role,
+        "created_at": datetime.now(timezone.utc)
+    }
+    result = await admins.insert_one(admin_doc)
+    created = await admins.find_one({"_id": result.inserted_id})
+    created["_id"] = str(created["_id"])
+    created.pop("password", None)
+    return created
+
+@app.post("/admin/login", response_model=AdminTokenResponse)
+async def admin_login(
+    data: AdminLoginRequest,
+    admins: AsyncIOMotorCollection = Depends(get_admins_collection)
+):
+    admin = await admins.find_one({"email": data.email})
+    if not admin or not verify_password(data.password, admin.get("password", "")):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid credentials")
+    token = create_admin_access_token(str(admin["_id"]))
+    return {"access_token": token, "token_type": "bearer"}
+
+@app.get("/admin/profile", response_model=AdminProfileResponse)
+async def admin_profile(current_admin: dict = Depends(get_current_admin)):
+    current_admin = {**current_admin}
+    current_admin["_id"] = str(current_admin["_id"])
+    current_admin.pop("password", None)
+    return current_admin
+
+
+# ----------------------
+# TEACHER AUTH ENDPOINTS
+# ----------------------
+
+@app.post("/teacher/register", response_model=TeacherProfileResponse)
+async def teacher_register(
+    data: TeacherCreateRequest,
+    teachers: AsyncIOMotorCollection = Depends(get_teachers_collection)
+):
+    exists = await teachers.find_one({"email": data.email})
+    if exists:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Teacher already exists")
+    teacher_doc = {
+        "name": data.name,
+        "email": data.email,
+        "phone": data.phone,
+        "password": hash_password(data.password),
+        "role": "teacher",
+        "created_at": datetime.now(timezone.utc)
+    }
+    result = await teachers.insert_one(teacher_doc)
+    created = await teachers.find_one({"_id": result.inserted_id})
+    created["_id"] = str(created["_id"])
+    created.pop("password", None)
+    return created
+
+@app.post("/teacher/login", response_model=TokenResponse)
+async def teacher_login(
+    data: TeacherLoginRequest,
+    teachers: AsyncIOMotorCollection = Depends(get_teachers_collection)
+):
+    teacher = await teachers.find_one({"email": data.email})
+    if not teacher or not verify_password(data.password, teacher.get("password", "")):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid credentials")
+    token = create_teacher_access_token(str(teacher["_id"]))
+    return {"access_token": token, "token_type": "bearer"}
+
+@app.get("/teacher/profile", response_model=TeacherProfileResponse)
+async def teacher_profile(current_teacher: dict = Depends(get_current_teacher)):
+    current_teacher = {**current_teacher}
+    current_teacher["_id"] = str(current_teacher["_id"])
+    current_teacher.pop("password", None)
+    return current_teacher
+
+
+# ----------------------
+# ADMIN CONTENT MANAGEMENT
+# ----------------------
+
+async def _get_or_create_content_doc(edu_collection: AsyncIOMotorCollection) -> dict:
+    doc = await edu_collection.find_one({"content": {"$exists": True}})
+    if not doc:
+        result = await edu_collection.insert_one({"content": {}, "created_at": datetime.now(timezone.utc)})
+        doc = await edu_collection.find_one({"_id": result.inserted_id})
+    return doc
+
+def _ensure_subject_path(content_root: dict, year: str, term: str, language: str, subject: str) -> None:
+    content_root.setdefault(year, {})
+    content_root[year].setdefault(term, {})
+    content_root[year][term].setdefault(language, {})
+    content_root[year][term][language].setdefault(subject, {"chapters": {}, "lessons": {}})
+
+@app.get("/admin/content/{year}/{term}/{language}/{subject}")
+async def admin_get_subject_content(
+    year: str, term: str, language: str, subject: str,
+    _: dict = Depends(get_current_admin),
+    edu_collection: AsyncIOMotorCollection = Depends(get_educational_content_collection)
+):
+    doc = await _get_or_create_content_doc(edu_collection)
+    content = doc.get("content", {})
+    _ensure_subject_path(content, year, term, language, subject)
+    await edu_collection.update_one({"_id": doc["_id"]}, {"$set": {"content": content}})
+    return content[year][term][language][subject]
+
+@app.post("/admin/content/{year}/{term}/{language}/{subject}/chapters")
+async def admin_create_chapter(
+    year: str, term: str, language: str, subject: str,
+    body: ChapterCreateRequest,
+    _: dict = Depends(get_current_admin),
+    edu_collection: AsyncIOMotorCollection = Depends(get_educational_content_collection)
+):
+    doc = await _get_or_create_content_doc(edu_collection)
+    content = doc.get("content", {})
+    _ensure_subject_path(content, year, term, language, subject)
+    chapters = content[year][term][language][subject]["chapters"]
+    new_id = 1
+    if chapters:
+        try:
+            new_id = max(int(k) for k in chapters.keys()) + 1
+        except Exception:
+            new_id = 1
+    chapters[str(new_id)] = {
+        "title": body.title,
+        "price": f"{body.price} جنية"
+    }
+    await edu_collection.update_one({"_id": doc["_id"]}, {"$set": {"content": content}})
+    return {"id": new_id, **chapters[str(new_id)]}
+
+@app.put("/admin/content/{year}/{term}/{language}/{subject}/chapters/{chapter_id}")
+async def admin_update_chapter(
+    year: str, term: str, language: str, subject: str, chapter_id: int,
+    body: ChapterUpdateRequest,
+    _: dict = Depends(get_current_admin),
+    edu_collection: AsyncIOMotorCollection = Depends(get_educational_content_collection)
+):
+    doc = await _get_or_create_content_doc(edu_collection)
+    content = doc.get("content", {})
+    _ensure_subject_path(content, year, term, language, subject)
+    chapters = content[year][term][language][subject]["chapters"]
+    key = str(chapter_id)
+    if key not in chapters:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Chapter not found")
+    if body.title is not None:
+        chapters[key]["title"] = body.title
+    if body.price is not None:
+        chapters[key]["price"] = f"{body.price} جنية"
+    await edu_collection.update_one({"_id": doc["_id"]}, {"$set": {"content": content}})
+    return {"id": chapter_id, **chapters[key]}
+
+@app.delete("/admin/content/{year}/{term}/{language}/{subject}/chapters/{chapter_id}")
+async def admin_delete_chapter(
+    year: str, term: str, language: str, subject: str, chapter_id: int,
+    _: dict = Depends(get_current_admin),
+    edu_collection: AsyncIOMotorCollection = Depends(get_educational_content_collection)
+):
+    doc = await _get_or_create_content_doc(edu_collection)
+    content = doc.get("content", {})
+    _ensure_subject_path(content, year, term, language, subject)
+    chapters = content[year][term][language][subject]["chapters"]
+    key = str(chapter_id)
+    if key not in chapters:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Chapter not found")
+    # Remove all lessons that belong to this chapter as well
+    lessons = content[year][term][language][subject]["lessons"]
+    to_delete_lessons = [lid for lid, ldata in lessons.items() if ldata.get("chapter_id") == chapter_id]
+    for lid in to_delete_lessons:
+        lessons.pop(lid, None)
+    deleted = chapters.pop(key)
+    await edu_collection.update_one({"_id": doc["_id"]}, {"$set": {"content": content}})
+    return {"message": "Chapter deleted", "deleted": {"id": chapter_id, **deleted}}
+
+@app.post("/admin/content/{year}/{term}/{language}/{subject}/lessons")
+async def admin_create_lesson(
+    year: str, term: str, language: str, subject: str,
+    body: LessonCreateRequest,
+    _: dict = Depends(get_current_admin),
+    edu_collection: AsyncIOMotorCollection = Depends(get_educational_content_collection)
+):
+    doc = await _get_or_create_content_doc(edu_collection)
+    content = doc.get("content", {})
+    _ensure_subject_path(content, year, term, language, subject)
+    subject_node = content[year][term][language][subject]
+    if str(body.chapter_id) not in subject_node["chapters"]:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "chapter_id does not exist")
+    lessons = subject_node["lessons"]
+    new_id = 1
+    if lessons:
+        try:
+            new_id = max(int(k) for k in lessons.keys()) + 1
+        except Exception:
+            new_id = 1
+    lessons[str(new_id)] = {
+        "title": body.title,
+        "chapter_id": int(body.chapter_id),
+        "price": f"{body.price} جنية",
+        "description": body.description or "",
+        "vimeo_embed_src": body.vimeo_embed_src or "",
+        "image_url": body.image_url or "",
+        "hours": float(body.hours or 0),
+        "lecture": body.lecture or "",
+        "isFree": bool(body.isFree)
+    }
+    await edu_collection.update_one({"_id": doc["_id"]}, {"$set": {"content": content}})
+    return {"id": new_id, **lessons[str(new_id)]}
+
+@app.put("/admin/content/{year}/{term}/{language}/{subject}/lessons/{lesson_id}")
+async def admin_update_lesson(
+    year: str, term: str, language: str, subject: str, lesson_id: int,
+    body: LessonUpdateRequest,
+    _: dict = Depends(get_current_admin),
+    edu_collection: AsyncIOMotorCollection = Depends(get_educational_content_collection)
+):
+    doc = await _get_or_create_content_doc(edu_collection)
+    content = doc.get("content", {})
+    _ensure_subject_path(content, year, term, language, subject)
+    node = content[year][term][language][subject]
+    lessons = node["lessons"]
+    key = str(lesson_id)
+    if key not in lessons:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Lesson not found")
+    if body.title is not None:
+        lessons[key]["title"] = body.title
+    if body.chapter_id is not None:
+        if str(body.chapter_id) not in node["chapters"]:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "chapter_id does not exist")
+        lessons[key]["chapter_id"] = int(body.chapter_id)
+    if body.price is not None:
+        lessons[key]["price"] = f"{body.price} جنية"
+    if body.description is not None:
+        lessons[key]["description"] = body.description
+    if body.vimeo_embed_src is not None:
+        lessons[key]["vimeo_embed_src"] = body.vimeo_embed_src
+    if body.image_url is not None:
+        lessons[key]["image_url"] = body.image_url
+    if body.hours is not None:
+        lessons[key]["hours"] = float(body.hours)
+    if body.lecture is not None:
+        lessons[key]["lecture"] = body.lecture
+    if body.isFree is not None:
+        lessons[key]["isFree"] = bool(body.isFree)
+    await edu_collection.update_one({"_id": doc["_id"]}, {"$set": {"content": content}})
+    return {"id": lesson_id, **lessons[key]}
+
+@app.delete("/admin/content/{year}/{term}/{language}/{subject}/lessons/{lesson_id}")
+async def admin_delete_lesson(
+    year: str, term: str, language: str, subject: str, lesson_id: int,
+    _: dict = Depends(get_current_admin),
+    edu_collection: AsyncIOMotorCollection = Depends(get_educational_content_collection)
+):
+    doc = await _get_or_create_content_doc(edu_collection)
+    content = doc.get("content", {})
+    _ensure_subject_path(content, year, term, language, subject)
+    lessons = content[year][term][language][subject]["lessons"]
+    key = str(lesson_id)
+    if key not in lessons:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Lesson not found")
+    deleted = lessons.pop(key)
+    await edu_collection.update_one({"_id": doc["_id"]}, {"$set": {"content": content}})
+    return {"message": "Lesson deleted", "deleted": {"id": lesson_id, **deleted}}
+
+
+# ----------------------
+# BOOKS MANAGEMENT (ADMIN)
+# ----------------------
+
+@app.get("/admin/books", response_model=List[BookResponse])
+async def admin_list_books(
+    _: dict = Depends(get_current_admin),
+    books_collection: AsyncIOMotorCollection = Depends(get_books_collection)
+):
+    return await books_collection.find().to_list(1000)
+
+@app.post("/admin/books", response_model=BookResponse)
+async def admin_create_book(
+    body: BookCreateRequest,
+    _: dict = Depends(get_current_admin),
+    books_collection: AsyncIOMotorCollection = Depends(get_books_collection)
+):
+    existing = await books_collection.find({}, {"id": 1}).sort("id", -1).limit(1).to_list(1)
+    new_id = (existing[0]["id"] + 1) if existing else 1
+    doc = {"id": new_id, "title": body.title, "price": body.price, "image": body.image}
+    await books_collection.insert_one(doc)
+    return doc
+
+@app.put("/admin/books/{book_id}", response_model=BookResponse)
+async def admin_update_book(
+    book_id: int,
+    body: BookUpdateRequest,
+    _: dict = Depends(get_current_admin),
+    books_collection: AsyncIOMotorCollection = Depends(get_books_collection)
+):
+    update = {k: v for k, v in body.dict(exclude_unset=True).items()}
+    await books_collection.update_one({"id": book_id}, {"$set": update})
+    updated = await books_collection.find_one({"id": book_id})
+    if not updated:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Book not found")
+    return updated
+
+@app.delete("/admin/books/{book_id}")
+async def admin_delete_book(
+    book_id: int,
+    _: dict = Depends(get_current_admin),
+    books_collection: AsyncIOMotorCollection = Depends(get_books_collection)
+):
+    result = await books_collection.find_one_and_delete({"id": book_id})
+    if not result:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Book not found")
+    return {"message": "Book deleted"}
+
+
+# ----------------------
+# PAYMENTS (PAYMOB SCAFFOLD)
+# ----------------------
+
+def _generate_merchant_order_id() -> str:
+    return f"ORD-{int(datetime.now(timezone.utc).timestamp())}-{''.join(random.choices(string.ascii_uppercase + string.digits, k=6))}"
+
+async def _resolve_item_amount(item_type: str, item_id: str, edu_collection: AsyncIOMotorCollection) -> float:
+    if item_type == "chapter":
+        try:
+            item = await find_item_in_content_by_id(int(item_id))
+        except Exception:
+            item = None
+        if item:
+            price_str = str(item.get("price", "0 جنية")).split()[0]
+            try:
+                return float(price_str)
+            except Exception:
+                return 0.0
+    return 0.0
+
+@app.post("/payments/initiate", response_model=PaymentInitiateResponse)
+async def initiate_payment(
+    body: PaymentInitiateRequest,
+    current_student: dict = Depends(get_current_student),
+    payments: AsyncIOMotorCollection = Depends(get_payments_collection),
+    edu_collection: AsyncIOMotorCollection = Depends(get_educational_content_collection)
+):
+    amount = await _resolve_item_amount(body.item_type, body.item_id, edu_collection)
+    merchant_order_id = _generate_merchant_order_id()
+    payment_doc = {
+        "merchant_order_id": merchant_order_id,
+        "student_id": str(current_student["_id"]),
+        "student_code": current_student.get("student_code"),
+        "item_type": body.item_type,
+        "item_id": body.item_id,
+        "amount": float(amount),
+        "status": "pending",
+        "payment_method": body.payment_method,
+        "created_at": datetime.now(timezone.utc)
+    }
+    await payments.insert_one(payment_doc)
+    redirect_url = f"https://paymob.example/checkout/{merchant_order_id}"
+    return {"merchant_order_id": merchant_order_id, "status": "pending", "redirect_url": redirect_url}
+
+@app.post("/payments/webhook")
+async def paymob_webhook(
+    payload: dict,
+    payments: AsyncIOMotorCollection = Depends(get_payments_collection),
+    paymob_logs: AsyncIOMotorCollection = Depends(get_paymob_logs_collection),
+    receipt_collection: AsyncIOMotorCollection = Depends(get_receipt_collection),
+    student_collection: AsyncIOMotorCollection = Depends(get_student_collection)
+):
+    try:
+        await paymob_logs.insert_one({"payload": payload, "received_at": datetime.now(timezone.utc)})
+    except Exception:
+        pass
+
+    merchant_order_id = payload.get("merchant_order_id") or payload.get("order"); paymob_order_id = payload.get("id") or payload.get("paymob_order_id")
+    success = bool(payload.get("success") or payload.get("is_paid") or payload.get("successfully_paid"))
+    if not merchant_order_id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "merchant_order_id missing")
+
+    payment = await payments.find_one({"merchant_order_id": merchant_order_id})
+    if not payment:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Payment not found")
+
+    new_status = "paid" if success else "failed"
+    await payments.update_one({"_id": payment["_id"]}, {"$set": {"status": new_status, "paymob_order_id": paymob_order_id, "webhook_payload": payload}})
+
+    if success:
+        # Create a receipt record for the student
+        student_id = payment.get("student_id")
+        student = await student_collection.find_one({"_id": ObjectId(student_id)}) if student_id else None
+        student_code = student.get("student_code") if student else None
+        receipt = {
+            "student_id": student_id,
+            "student_code": student_code,
+            "receipt_type": "package_purchase",
+            "item_id": payment.get("item_id"),
+            "amount": float(payment.get("amount", 0.0)),
+            "description": f"Purchase of {payment.get('item_type')} {payment.get('item_id')} (Paymob)",
+            "created_at": datetime.now(timezone.utc)
+        }
+        try:
+            await receipt_collection.insert_one(receipt)
+        except Exception:
+            pass
+
+    return {"message": "ok"}
+
+@app.get("/payments/status/{merchant_order_id}", response_model=PaymentStatusResponse)
+async def payment_status(
+    merchant_order_id: str,
+    current_student: dict = Depends(get_current_student),
+    payments: AsyncIOMotorCollection = Depends(get_payments_collection)
+):
+    payment = await payments.find_one({"merchant_order_id": merchant_order_id, "student_id": str(current_student["_id"])})
+    if not payment:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Payment not found")
+    return {
+        "merchant_order_id": payment["merchant_order_id"],
+        "status": payment.get("status", "pending"),
+        "paymob_order_id": payment.get("paymob_order_id"),
+        "amount": float(payment.get("amount", 0.0))
+    }
+
+@app.get("/dashboard/my-payments")
+async def my_payments(
+    current_student: dict = Depends(get_current_student),
+    payments: AsyncIOMotorCollection = Depends(get_payments_collection)
+):
+    cursor = payments.find({"student_id": str(current_student["_id"])})
+    docs = await cursor.to_list(1000)
+    for d in docs:
+        d["_id"] = str(d["_id"]) if "_id" in d else None
+    return docs
+
+@app.get("/admin/payments")
+async def admin_list_payments(
+    _: dict = Depends(get_current_admin),
+    payments: AsyncIOMotorCollection = Depends(get_payments_collection)
+):
+    return await payments.find().sort("created_at", -1).to_list(1000)
+
+
+# ----------------------
+# ADMIN DASHBOARD METRICS
+# ----------------------
+
+@app.get("/admin/dashboard")
+async def admin_dashboard(
+    _: dict = Depends(get_current_admin),
+    student_collection: AsyncIOMotorCollection = Depends(get_student_collection),
+    receipt_collection: AsyncIOMotorCollection = Depends(get_receipt_collection),
+    books_collection: AsyncIOMotorCollection = Depends(get_books_collection),
+    payments: AsyncIOMotorCollection = Depends(get_payments_collection)
+):
+    total_students = await student_collection.count_documents({})
+    total_receipts = await receipt_collection.count_documents({})
+    receipts_cursor = receipt_collection.find({}, {"amount": 1})
+    receipts = await receipts_cursor.to_list(10000)
+    total_revenue = sum(float(r.get("amount", 0)) for r in receipts)
+    total_books = await books_collection.count_documents({})
+    recent_payments = await payments.find().sort("created_at", -1).limit(10).to_list(10)
+    return {
+        "total_students": total_students,
+        "total_receipts": total_receipts,
+        "total_revenue": total_revenue,
+        "total_books": total_books,
+        "recent_payments": recent_payments
+    }
+
+@app.get("/admin/students")
+async def admin_list_students(
+    _: dict = Depends(get_current_admin),
+    student_collection: AsyncIOMotorCollection = Depends(get_student_collection)
+):
+    # Note: This returns hashed passwords, so we remove them
+    students = await student_collection.find().to_list(1000)
+    for s in students:
+        s.pop("password", None)
+        s["_id"] = str(s["_id"]) if "_id" in s else None
+    return students
+
+@app.get("/admin/receipts")
+async def admin_list_receipts(
+    _: dict = Depends(get_current_admin),
+    receipt_collection: AsyncIOMotorCollection = Depends(get_receipt_collection)
+):
+    receipts = await receipt_collection.find().sort("created_at", -1).to_list(1000)
+    for r in receipts:
+        r["_id"] = str(r["_id"]) if "_id" in r else None
+    return receipts
+
+@app.get("/admin/teachers")
+async def admin_list_teachers(
+    _: dict = Depends(get_current_admin),
+    teachers: AsyncIOMotorCollection = Depends(get_teachers_collection)
+):
+    docs = await teachers.find().to_list(1000)
+    for d in docs:
+        d.pop("password", None)
+        d["_id"] = str(d["_id"]) if "_id" in d else None
+    return docs
+
+@app.put("/teacher/profile", response_model=TeacherProfileResponse)
+async def update_teacher_profile(
+    body: TeacherUpdateRequest,
+    current_teacher: dict = Depends(get_current_teacher),
+    teachers: AsyncIOMotorCollection = Depends(get_teachers_collection)
+):
+    update = {k: v for k, v in body.dict(exclude_unset=True).items()}
+    if "password" in update and update["password"]:
+        update["password"] = hash_password(update["password"])
+    elif "password" in update:
+        update.pop("password", None)
+    await teachers.update_one({"_id": current_teacher["_id"]}, {"$set": update})
+    updated = await teachers.find_one({"_id": current_teacher["_id"]})
+    updated["_id"] = str(updated["_id"])
+    updated.pop("password", None)
+    return updated
 
 @app.post("/register")
 async def register(data: RegisterRequest, students: AsyncIOMotorCollection = Depends(get_student_collection)):
