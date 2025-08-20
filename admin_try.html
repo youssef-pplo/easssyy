@@ -7,28 +7,32 @@
   <style>
     body { font-family: Arial, sans-serif; background:#f7f7fb; margin:0; padding:24px; }
     h1 { margin-top:0; }
-    .container { display:grid; grid-template-columns: 1fr 420px; gap:24px; max-width:1200px; margin:0 auto; }
+    .container { display:grid; grid-template-columns: 1fr 420px; gap:24px; max-width:1400px; margin:0 auto; }
     .section { background:#fff; border-radius:10px; box-shadow:0 2px 10px rgba(0,0,0,0.06); padding:18px; margin-bottom:16px; }
     label { font-size:12px; color:#666; display:block; margin-top:8px; }
-    input, select { width:100%; padding:10px; margin-top:6px; border:1px solid #ddd; border-radius:6px; }
+    input { width:100%; padding:10px; margin-top:6px; border:1px solid #ddd; border-radius:6px; }
     button { background:#1f6feb; color:#fff; border:none; padding:10px 12px; border-radius:6px; cursor:pointer; margin-top:10px; }
     button.secondary { background:#6E6E73; }
     .row { display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap:12px; }
-    .btns { display:flex; gap:10px; flex-wrap:wrap; }
+    .btns { display:flex; gap:10px; flex-wrap:wrap; margin-top:6px; }
     pre { background:#0d1117; color:#c9d1d9; padding:16px; border-radius:8px; height: calc(100vh - 120px); overflow:auto; font-size:13px; }
     small { color:#444 }
   </style>
-  <!-- Simple page to test admin endpoints -->
 </head>
 <body>
   <div class="container">
     <div>
       <h1>Admin API Tester</h1>
+
       <div class="section">
-        <label>Admin Access Token</label>
-        <input id="adminAccessToken" placeholder="paste token here" />
+        <label>Email</label>
+        <input id="email" value="admin@easybio.com" />
+        <label>Password</label>
+        <input id="password" type="password" value="Admin@123" />
+        <button id="btnAdminLogin">Login</button>
+        <label>Access Token</label>
+        <input id="adminAccessToken" placeholder="token will appear here" />
         <div class="btns">
-          <button id="btnAdminLogin">Login (Default)</button>
           <button id="btnAdminProfile" class="secondary">My Profile</button>
         </div>
         <small>Default admin: email=admin@easybio.com, password=Admin@123</small>
@@ -117,7 +121,6 @@
           <button id="btnAdmReceipts">List Receipts</button>
         </div>
       </div>
-
     </div>
 
     <div>
@@ -131,35 +134,50 @@
 <script>
 const out = document.getElementById('out');
 const tokenInput = document.getElementById('adminAccessToken');
-const base = '';
+const base = 'https://web-production-8b5ee.up.railway.app';
 
 async function call(endpoint, method='GET', body){
   const headers = { 'Content-Type': 'application/json' };
   if (tokenInput.value) headers['Authorization'] = `Bearer ${tokenInput.value}`;
-  const res = await fetch(base + endpoint, { method, headers, body: body ? JSON.stringify(body): undefined, credentials: 'include'});
-  const data = await res.json().catch(()=>({status: res.status, text: 'no json'}));
-  out.textContent = JSON.stringify(data, null, 2);
-  if (data.access_token) tokenInput.value = data.access_token;
-  return data;
+  try {
+    const res = await fetch(base + endpoint, {
+      method,
+      headers,
+      body: body ? JSON.stringify(body): undefined
+    });
+    const text = await res.text();
+    let data;
+    try { data = JSON.parse(text); } catch { data = { status: res.status, body: text }; }
+    out.textContent = JSON.stringify(data, null, 2);
+    if (data.access_token) tokenInput.value = data.access_token;
+    return data;
+  } catch (err) {
+    out.textContent = 'Request failed: ' + err.message;
+  }
 }
 
-document.getElementById('btnAdminLogin').onclick = ()=> call('/admin/login','POST',{ email:'admin@easybio.com', password:'Admin@123' });
+// Login & Profile
+document.getElementById('btnAdminLogin').onclick = ()=> call('/admin/login','POST',{ email:email.value, password:password.value });
 document.getElementById('btnAdminProfile').onclick = ()=> call('/admin/profile','GET');
 
+// Books
 document.getElementById('btnBooksList').onclick = ()=> call('/admin/books');
-document.getElementById('btnBookCreate').onclick = ()=> call('/admin/books','POST',{ title:document.getElementById('bookTitle').value, price:document.getElementById('bookPrice').value, image:document.getElementById('bookImage').value });
-document.getElementById('btnBookUpdate').onclick = ()=> call(`/admin/books/${document.getElementById('bookId').value}`,'PUT',{ title:document.getElementById('bookTitleU').value || undefined, price:document.getElementById('bookPriceU').value || undefined, image:document.getElementById('bookImageU').value || undefined });
-document.getElementById('btnBookDelete').onclick = ()=> call(`/admin/books/${document.getElementById('bookId').value}`,'DELETE');
+document.getElementById('btnBookCreate').onclick = ()=> call('/admin/books','POST',{ title:bookTitle.value, price:bookPrice.value, image:bookImage.value });
+document.getElementById('btnBookUpdate').onclick = ()=> call(`/admin/books/${bookId.value}`,'PUT',{ title:bookTitleU.value||undefined, price:bookPriceU.value||undefined, image:bookImageU.value||undefined });
+document.getElementById('btnBookDelete').onclick = ()=> call(`/admin/books/${bookId.value}`,'DELETE');
 
-document.getElementById('btnGetSubject').onclick = ()=> call(`/admin/content/${document.getElementById('year').value}/${document.getElementById('term').value}/${document.getElementById('language').value}/${document.getElementById('subject').value}`);
-document.getElementById('btnChCreate').onclick = ()=> call(`/admin/content/${year.value}/${term.value}/${language.value}/${subject.value}/chapters`,'POST',{ title:chTitle.value, price:parseFloat(chPrice.value || '0') });
-document.getElementById('btnChUpdate').onclick = ()=> call(`/admin/content/${year.value}/${term.value}/${language.value}/${subject.value}/chapters/${chId.value}`,'PUT',{ title:chTitle.value || undefined, price: chPrice.value ? parseFloat(chPrice.value) : undefined });
+// Content (Chapters)
+document.getElementById('btnGetSubject').onclick = ()=> call(`/admin/content/${year.value}/${term.value}/${language.value}/${subject.value}`);
+document.getElementById('btnChCreate').onclick = ()=> call(`/admin/content/${year.value}/${term.value}/${language.value}/${subject.value}/chapters`,'POST',{ title:chTitle.value, price:parseFloat(chPrice.value||'0') });
+document.getElementById('btnChUpdate').onclick = ()=> call(`/admin/content/${year.value}/${term.value}/${language.value}/${subject.value}/chapters/${chId.value}`,'PUT',{ title:chTitle.value||undefined, price: chPrice.value ? parseFloat(chPrice.value) : undefined });
 document.getElementById('btnChDelete').onclick = ()=> call(`/admin/content/${year.value}/${term.value}/${language.value}/${subject.value}/chapters/${chId.value}`,'DELETE');
 
+// Lessons
 document.getElementById('btnLsCreate').onclick = ()=> call(`/admin/content/${year.value}/${term.value}/${language.value}/${subject.value}/lessons`,'POST',{ title:lsTitle.value, chapter_id:parseInt(lsChapterId.value), price:parseFloat(lsPrice.value||'0'), hours:parseFloat(lsHours.value||'0'), isFree: lsFree.value==='true' });
-document.getElementById('btnLsUpdate').onclick = ()=> call(`/admin/content/${year.value}/${term.value}/${language.value}/${subject.value}/lessons/${lsId.value}`,'PUT',{ title:lsTitleU.value || undefined, price: lsPriceU.value ? parseFloat(lsPriceU.value) : undefined });
+document.getElementById('btnLsUpdate').onclick = ()=> call(`/admin/content/${year.value}/${term.value}/${language.value}/${subject.value}/lessons/${lsId.value}`,'PUT',{ title:lsTitleU.value||undefined, price: lsPriceU.value ? parseFloat(lsPriceU.value) : undefined });
 document.getElementById('btnLsDelete').onclick = ()=> call(`/admin/content/${year.value}/${term.value}/${language.value}/${subject.value}/lessons/${lsId.value}`,'DELETE');
 
+// Payments, Students, Receipts
 document.getElementById('btnAdmPayments').onclick = ()=> call('/admin/payments');
 document.getElementById('btnAdmStudents').onclick = ()=> call('/admin/students');
 document.getElementById('btnAdmReceipts').onclick = ()=> call('/admin/receipts');
