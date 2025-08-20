@@ -82,6 +82,23 @@ def convert_dict_keys_to_str(d):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await connect_to_mongo()
+    # Seed a default admin user if it does not exist
+    try:
+        admins_collection = await get_admins_collection()
+        default_email = "admin@easybio.com"
+        default_password = "Admin@123"
+        existing = await admins_collection.find_one({"email": default_email})
+        if not existing:
+            await admins_collection.insert_one({
+                "email": default_email,
+                "password": hash_password(default_password),
+                "name": "Super Admin",
+                "role": "admin",
+                "created_at": datetime.now(timezone.utc)
+            })
+            print(f"Seeded default admin: {default_email}")
+    except Exception as e:
+        print("Default admin seeding failed:", e)
     yield
     await close_mongo_connection()
 
