@@ -193,3 +193,87 @@ class BookUpdateRequest(BaseModel):
     title: Optional[str] = None
     price: Optional[str] = None
     image: Optional[str] = None
+
+# NEW: Admin registration and profile
+class AdminRegisterRequest(BaseModel):
+    email: EmailStr
+    password: str
+    name: Optional[str] = None
+    role: str = "admin"
+
+class AdminProfileResponse(BaseModel):
+    id: str = Field(alias="_id")
+    email: EmailStr
+    name: Optional[str] = None
+    role: str
+
+# NEW: Content management DTOs
+class ChapterCreateRequest(BaseModel):
+    title: str
+    price: float = 0.0
+
+class ChapterUpdateRequest(BaseModel):
+    title: Optional[str] = None
+    price: Optional[float] = None
+
+class LessonCreateRequest(BaseModel):
+    title: str
+    chapter_id: int
+    price: float = 0.0
+    description: Optional[str] = ""
+    vimeo_embed_src: Optional[str] = ""
+    image_url: Optional[str] = ""
+    hours: float = 0.0
+    lecture: Optional[str] = ""
+    isFree: bool = False
+
+class LessonUpdateRequest(BaseModel):
+    title: Optional[str] = None
+    chapter_id: Optional[int] = None
+    price: Optional[float] = None
+    description: Optional[str] = None
+    vimeo_embed_src: Optional[str] = None
+    image_url: Optional[str] = None
+    hours: Optional[float] = None
+    lecture: Optional[str] = None
+    isFree: Optional[bool] = None
+
+# NEW: Payment DTOs (Paymob scaffolding)
+class PaymentInitiateRequest(BaseModel):
+    item_type: str
+    item_id: str
+    payment_method: Optional[str] = "card"
+
+class PaymentInitiateResponse(BaseModel):
+    merchant_order_id: str
+    status: str
+    redirect_url: Optional[str] = None
+
+class PaymentStatusResponse(BaseModel):
+    merchant_order_id: str
+    status: str
+    paymob_order_id: Optional[int] = None
+    amount: float
+
+# NEW: Teacher DTOs
+class TeacherCreateRequest(BaseModel):
+    name: str
+    email: EmailStr
+    password: str
+    phone: Optional[str] = None
+
+class TeacherLoginRequest(BaseModel):
+    email: EmailStr
+    password: str
+
+class TeacherProfileResponse(BaseModel):
+    id: str = Field(alias="_id")
+    name: str
+    email: EmailStr
+    phone: Optional[str] = None
+
+class TeacherUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    email: Optional[EmailStr] = None
+    phone: Optional[str] = None
+    password: Optional[str] = None

@@ -85,3 +85,38 @@ async def get_mock_test_results_collection():
 async def get_mock_videos_collection():
     database = await get_database()
     return database.get_collection("mock_videos")
+
+# NEW: Admins collection
+async def get_admins_collection():
+    database = await get_database()
+    return database.get_collection("admins")
+
+# NEW: Teachers collection
+async def get_teachers_collection():
+    database = await get_database()
+    return database.get_collection("teachers")
+
+# NEW: Payments collection
+async def get_payments_collection():
+    database = await get_database()
+    collection = database.get_collection("payments")
+    # Indexes for faster lookups
+    try:
+        existing_indexes = await collection.index_information()
+        if "student_code_1" not in existing_indexes:
+            await collection.create_index("student_code")
+        if "status_1" not in existing_indexes:
+            await collection.create_index("status")
+        if "paymob_order_id_1" not in existing_indexes:
+            await collection.create_index("paymob_order_id", unique=True)
+        if "merchant_order_id_1" not in existing_indexes:
+            await collection.create_index("merchant_order_id", unique=True)
+    except Exception:
+        # In some environments index creation may fail silently; continue
+        pass
+    return collection
+
+# NEW: Paymob logs collection (optional)
+async def get_paymob_logs_collection():
+    database = await get_database()
+    return database.get_collection("paymob_logs")
