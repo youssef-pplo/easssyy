@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Admin API Tester</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: Arial, sans-serif; background:#f7f7fb; margin:0; padding:24px; }
+    h1 { margin-top:0; }
+    .container { display:grid; grid-template-columns: 1fr 420px; gap:24px; max-width:1200px; margin:0 auto; }
+    .section { background:#fff; border-radius:10px; box-shadow:0 2px 10px rgba(0,0,0,0.06); padding:18px; margin-bottom:16px; }
+    label { font-size:12px; color:#666; display:block; margin-top:8px; }
+    input, select { width:100%; padding:10px; margin-top:6px; border:1px solid #ddd; border-radius:6px; }
+    button { background:#1f6feb; color:#fff; border:none; padding:10px 12px; border-radius:6px; cursor:pointer; margin-top:10px; }
+    button.secondary { background:#6E6E73; }
+    .row { display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap:12px; }
+    .btns { display:flex; gap:10px; flex-wrap:wrap; }
+    pre { background:#0d1117; color:#c9d1d9; padding:16px; border-radius:8px; height: calc(100vh - 120px); overflow:auto; font-size:13px; }
+    small { color:#444 }
+  </style>
+  <!-- Simple page to test admin endpoints -->
+</head>
+<body>
+  <div class="container">
+    <div>
+      <h1>Admin API Tester</h1>
+      <div class="section">
+        <label>Admin Access Token</label>
+        <input id="adminAccessToken" placeholder="paste token here" />
+        <div class="btns">
+          <button id="btnAdminLogin">Login (Default)</button>
+          <button id="btnAdminProfile" class="secondary">My Profile</button>
+        </div>
+        <small>Default admin: email=admin@easybio.com, password=Admin@123</small>
+      </div>
+
+      <div class="section">
+        <h3>Books</h3>
+        <div class="btns">
+          <button id="btnBooksList">List</button>
+        </div>
+        <div class="row">
+          <div>
+            <label>New Book</label>
+            <input id="bookTitle" placeholder="Title" value="Biology Basics" />
+            <input id="bookPrice" placeholder="Price" value="100 جنية" />
+            <input id="bookImage" placeholder="Image URL" value="https://via.placeholder.com/150x200" />
+            <button id="btnBookCreate">Create</button>
+          </div>
+          <div>
+            <label>Update Book</label>
+            <input id="bookId" placeholder="ID" />
+            <input id="bookTitleU" placeholder="Title" />
+            <input id="bookPriceU" placeholder="Price" />
+            <input id="bookImageU" placeholder="Image URL" />
+            <button id="btnBookUpdate">Update</button>
+            <button id="btnBookDelete" class="secondary">Delete</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <h3>Content</h3>
+        <div class="row">
+          <div>
+            <label>Path</label>
+            <input id="year" placeholder="year" value="10" />
+            <input id="term" placeholder="term" value="term1" />
+            <input id="language" placeholder="language" value="ar" />
+            <input id="subject" placeholder="subject" value="biology" />
+            <button id="btnGetSubject">Get Subject</button>
+          </div>
+          <div>
+            <label>Chapter</label>
+            <input id="chTitle" placeholder="Title" value="Intro" />
+            <input id="chPrice" placeholder="Price (float)" value="0" />
+            <input id="chId" placeholder="Chapter ID for update/delete" />
+            <div class="btns">
+              <button id="btnChCreate">Create</button>
+              <button id="btnChUpdate" class="secondary">Update</button>
+              <button id="btnChDelete" class="secondary">Delete</button>
+            </div>
+          </div>
+        </div>
+        <div class="row" style="margin-top:12px">
+          <div>
+            <label>Lesson</label>
+            <input id="lsTitle" placeholder="Title" value="Lesson 1" />
+            <input id="lsChapterId" placeholder="Chapter ID" />
+            <input id="lsPrice" placeholder="Price (float)" value="50" />
+            <input id="lsHours" placeholder="Hours" value="1.5" />
+            <input id="lsFree" placeholder="isFree true/false" value="false" />
+            <button id="btnLsCreate">Create</button>
+          </div>
+          <div>
+            <label>Update/Delete Lesson</label>
+            <input id="lsId" placeholder="Lesson ID" />
+            <input id="lsTitleU" placeholder="Title" />
+            <input id="lsPriceU" placeholder="Price" />
+            <button id="btnLsUpdate" class="secondary">Update</button>
+            <button id="btnLsDelete" class="secondary">Delete</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <h3>Payments</h3>
+        <div class="btns">
+          <button id="btnAdmPayments">List Payments</button>
+        </div>
+      </div>
+
+      <div class="section">
+        <h3>Students & Receipts</h3>
+        <div class="btns">
+          <button id="btnAdmStudents">List Students</button>
+          <button id="btnAdmReceipts">List Receipts</button>
+        </div>
+      </div>
+
+    </div>
+
+    <div>
+      <div class="section">
+        <h3>Response</h3>
+        <pre id="out">Ready...</pre>
+      </div>
+    </div>
+  </div>
+
+<script>
+const out = document.getElementById('out');
+const tokenInput = document.getElementById('adminAccessToken');
+const base = '';
+
+async function call(endpoint, method='GET', body){
+  const headers = { 'Content-Type': 'application/json' };
+  if (tokenInput.value) headers['Authorization'] = `Bearer ${tokenInput.value}`;
+  const res = await fetch(base + endpoint, { method, headers, body: body ? JSON.stringify(body): undefined, credentials: 'include'});
+  const data = await res.json().catch(()=>({status: res.status, text: 'no json'}));
+  out.textContent = JSON.stringify(data, null, 2);
+  if (data.access_token) tokenInput.value = data.access_token;
+  return data;
+}
+
+document.getElementById('btnAdminLogin').onclick = ()=> call('/admin/login','POST',{ email:'admin@easybio.com', password:'Admin@123' });
+document.getElementById('btnAdminProfile').onclick = ()=> call('/admin/profile','GET');
+
+document.getElementById('btnBooksList').onclick = ()=> call('/admin/books');
+document.getElementById('btnBookCreate').onclick = ()=> call('/admin/books','POST',{ title:document.getElementById('bookTitle').value, price:document.getElementById('bookPrice').value, image:document.getElementById('bookImage').value });
+document.getElementById('btnBookUpdate').onclick = ()=> call(`/admin/books/${document.getElementById('bookId').value}`,'PUT',{ title:document.getElementById('bookTitleU').value || undefined, price:document.getElementById('bookPriceU').value || undefined, image:document.getElementById('bookImageU').value || undefined });
+document.getElementById('btnBookDelete').onclick = ()=> call(`/admin/books/${document.getElementById('bookId').value}`,'DELETE');
+
+document.getElementById('btnGetSubject').onclick = ()=> call(`/admin/content/${document.getElementById('year').value}/${document.getElementById('term').value}/${document.getElementById('language').value}/${document.getElementById('subject').value}`);
+document.getElementById('btnChCreate').onclick = ()=> call(`/admin/content/${year.value}/${term.value}/${language.value}/${subject.value}/chapters`,'POST',{ title:chTitle.value, price:parseFloat(chPrice.value || '0') });
+document.getElementById('btnChUpdate').onclick = ()=> call(`/admin/content/${year.value}/${term.value}/${language.value}/${subject.value}/chapters/${chId.value}`,'PUT',{ title:chTitle.value || undefined, price: chPrice.value ? parseFloat(chPrice.value) : undefined });
+document.getElementById('btnChDelete').onclick = ()=> call(`/admin/content/${year.value}/${term.value}/${language.value}/${subject.value}/chapters/${chId.value}`,'DELETE');
+
+document.getElementById('btnLsCreate').onclick = ()=> call(`/admin/content/${year.value}/${term.value}/${language.value}/${subject.value}/lessons`,'POST',{ title:lsTitle.value, chapter_id:parseInt(lsChapterId.value), price:parseFloat(lsPrice.value||'0'), hours:parseFloat(lsHours.value||'0'), isFree: lsFree.value==='true' });
+document.getElementById('btnLsUpdate').onclick = ()=> call(`/admin/content/${year.value}/${term.value}/${language.value}/${subject.value}/lessons/${lsId.value}`,'PUT',{ title:lsTitleU.value || undefined, price: lsPriceU.value ? parseFloat(lsPriceU.value) : undefined });
+document.getElementById('btnLsDelete').onclick = ()=> call(`/admin/content/${year.value}/${term.value}/${language.value}/${subject.value}/lessons/${lsId.value}`,'DELETE');
+
+document.getElementById('btnAdmPayments').onclick = ()=> call('/admin/payments');
+document.getElementById('btnAdmStudents').onclick = ()=> call('/admin/students');
+document.getElementById('btnAdmReceipts').onclick = ()=> call('/admin/receipts');
+</script>
+</body>
+</html>

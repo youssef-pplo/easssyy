@@ -1407,3 +1407,7 @@ async def get_parent_dashboard(
 @app.get("/try", response_class=FileResponse)
 def get_test_frontend():
     return FileResponse("try.html", media_type="text/html")
+
+@app.get("/admin_try", response_class=FileResponse)
+def get_admin_test_frontend():
+    return FileResponse("admin_try.html", media_type="text/html")
