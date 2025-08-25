@@ -77,6 +77,25 @@ def convert_dict_keys_to_str(d):
             new_d[str(k)] = v
     return new_d
 
+# EDITED: A helper function to find content details by type and ID
+async def find_item_in_content_by_id(item_id_to_find: str, item_type: str):
+    """Finds a chapter or lesson by its ID in the database content."""
+    edu_collection = await get_educational_content_collection()
+    edu_doc = await edu_collection.find_one({})
+    if not edu_doc:
+        return None, None
+    content = edu_doc.get("content", {})
+    # Iterate through the converted string keys
+    for year_content in content.values():
+        for term_content in year_content.values():
+            for lang_content in term_content.values():
+                for subject_content in lang_content.values():
+                    # Check for the item with the converted string key based on type
+                    if item_type == "chapter" and str(item_id_to_find) in subject_content.get("chapters", {}):
+                        return subject_content["chapters"][str(item_id_to_find)], "chapter"
+                    elif item_type == "lesson" and str(item_id_to_find) in subject_content.get("lessons", {}):
+                        return subject_content["lessons"][str(item_id_to_find)], "lesson"
+    return None, None
 
 
 @asynccontextmanager
@@ -197,7 +216,162 @@ async def find_item_in_content_by_id(item_id_to_find: int):
                         return subject_content["chapters"][str(item_id_to_find)]
     return None
 
-# --- API Endpoints ---
+# EDITED: A helper function to find content details by ID, regardless of type
+async def find_item_details_by_id(item_id: str):
+    """Finds a chapter or lesson by its ID in the database content."""
+    edu_collection = await get_educational_content_collection()
+    edu_doc = await edu_collection.find_one({})
+    if not edu_doc:
+        return None, None
+    content = edu_doc.get("content", {})
+    for year_content in content.values():
+        for term_content in year_content.values():
+            for lang_content in term_content.values():
+                for subject_content in lang_content.values():
+                    if item_id in subject_content.get("chapters", {}):
+                        return subject_content["chapters"][item_id], "chapter"
+                    if item_id in subject_content.get("lessons", {}):
+                        return subject_content["lessons"][item_id], "lesson"
+    return None, None
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await connect_to_mongo()
+    # Seed a default admin user if it does not exist
+    try:
+        admins_collection = await get_admins_collection()
+        default_email = "admin@easybio.com"
+        default_password = "Admin@123"
+        existing = await admins_collection.find_one({"email": default_email})
+        if not existing:
+            await admins_collection.insert_one({
+                "email": default_email,
+                "password": hash_password(default_password),
+                "name": "Super Admin",
+                "role": "admin",
+                "created_at": datetime.now(timezone.utc)
+            })
+            print(f"Seeded default admin: {default_email}")
+    except Exception as e:
+        print("Default admin seeding failed:", e)
+    yield
+    await close_mongo_connection()
+
+app = FastAPI(lifespan=lifespan)
+
+# --- Configuration & Middleware ---
+SECRET_KEY = "Ea$yB1o"
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 15
+REFRESH_TOKEN_EXPIRE_DAYS = 7
+SMTP_HOST, SMTP_PORT = 'smtp.hostinger.com', 587
+SMTP_USERNAME, SMTP_PASSWORD = 'noreply@easybio-drabdelrahman.com', 'Webacc@123'
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*", "http://localhost:5173", "http://localhost:8000", "https://easybio2025.netlify.app"],
+    allow_credentials=True, allow_methods=["*"], allow_headers=["*"],
+)
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
+
+# --- Helper & Auth Functions ---
+def create_token(data: dict, expires_delta: timedelta):
+    to_encode = data.copy()
+    expire = datetime.now(timezone.utc) + expires_delta
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+def create_access_token(subject: str): return create_token({"sub": subject}, timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
+def create_refresh_token(subject: str):
+    expire_delta, expire_utc = timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS), datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+    return create_token({"sub": subject}, expire_delta), expire_utc
+def create_password_reset_token(email: str, scope: str, minutes: int): return create_token({"sub": email, "scope": scope}, timedelta(minutes=minutes))
+def verify_password(plain, hashed): return bcrypt.verify(plain, hashed)
+def hash_password(password): return bcrypt.hash(password)
+def generate_student_code(): return ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
+def decode_token(token: str):
+    try: return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    except JWTError: return None
+
+# --- Role-based token helpers ---
+def create_admin_access_token(admin_id: str):
+    return create_token({"sub": admin_id, "role": "admin"}, timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
+
+def create_teacher_access_token(teacher_id: str):
+    return create_token({"sub": teacher_id, "role": "teacher"}, timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
+def send_password_reset_email(email: str, code: str):
+    msg = MIMEText(f"Your password reset code is: {code}\nIt is valid for 10 minutes.")
+    msg['Subject'], msg['From'], msg['To'] = 'Your Password Reset Code', SMTP_USERNAME, email
+    try:
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
+            server.starttls()
+            server.login(SMTP_USERNAME, SMTP_PASSWORD)
+            server.send_message(msg)
+            print(f"Password reset code sent to {email}")
+    except Exception as e: print(f"Failed to send email to {email}. Error: {e}")
+async def get_current_student(token: str = Depends(oauth2_scheme), student_collection: AsyncIOMotorCollection = Depends(get_student_collection)):
+    payload = decode_token(token)
+    if not payload or not (sub := payload.get("sub")): raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid token")
+    student = await student_collection.find_one({"_id": ObjectId(sub)})
+    if not student: raise HTTPException(status.HTTP_404_NOT_FOUND, "Student not found")
+    return student
+
+async def get_current_admin(token: str = Depends(oauth2_scheme), admins: AsyncIOMotorCollection = Depends(get_admins_collection)):
+    payload = decode_token(token)
+    if not payload or payload.get("role") != "admin" or not (sub := payload.get("sub")):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid admin token")
+    admin = await admins.find_one({"_id": ObjectId(sub)})
+    if not admin:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Admin not found")
+    return admin
+
+async def get_current_teacher(token: str = Depends(oauth2_scheme), teachers: AsyncIOMotorCollection = Depends(get_teachers_collection)):
+    payload = decode_token(token)
+    if not payload or payload.get("role") != "teacher" or not (sub := payload.get("sub")):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid teacher token")
+    teacher = await teachers.find_one({"_id": ObjectId(sub)})
+    if not teacher:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Teacher not found")
+    return teacher
+
+# Add a new helper function to find content details
+async def find_item_in_content_by_id(item_id_to_find: int):
+    """Finds a chapter or lesson by its ID in the database content."""
+    edu_collection = await get_educational_content_collection()
+    edu_doc = await edu_collection.find_one({})
+    if not edu_doc:
+        return None
+    content = edu_doc.get("content", {})
+    # Iterate through the converted string keys
+    for year_content in content.values():
+        for term_content in year_content.values():
+            for lang_content in term_content.values():
+                for subject_content in lang_content.values():
+                    # Check for the item with the converted string key
+                    if str(item_id_to_find) in subject_content.get("chapters", {}):
+                        return subject_content["chapters"][str(item_id_to_find)]
+    return None
+
+# EDITED: A helper function to find content details by ID, regardless of type
+async def find_item_details_by_id(item_id: str):
+    """Finds a chapter or lesson by its ID in the database content."""
+    edu_collection = await get_educational_content_collection()
+    edu_doc = await edu_collection.find_one({})
+    if not edu_doc:
+        return None, None
+    content = edu_doc.get("content", {})
+    for year_content in content.values():
+        for term_content in year_content.values():
+            for lang_content in term_content.values():
+                for subject_content in lang_content.values():
+                    if item_id in subject_content.get("chapters", {}):
+                        return subject_content["chapters"][item_id], "chapter"
+                    if item_id in subject_content.get("lessons", {}):
+                        return subject_content["lessons"][item_id], "lesson"
+    return None, None
+
+
 @app.get("/")
 def root(): return {"status": "ok"}
 
@@ -532,20 +706,21 @@ async def admin_delete_book(
 def _generate_merchant_order_id() -> str:
     return f"ORD-{int(datetime.now(timezone.utc).timestamp())}-{''.join(random.choices(string.ascii_uppercase + string.digits, k=6))}"
 
+# EDITED: This function now resolves item price based on item_type
 async def _resolve_item_amount(item_type: str, item_id: str, edu_collection: AsyncIOMotorCollection) -> float:
-    if item_type == "chapter":
-        try:
-            item = await find_item_in_content_by_id(int(item_id))
-        except Exception:
-            item = None
-        if item:
+    if item_type == "chapter" or item_type == "lesson":
+        item, found_type = await find_item_details_by_id(item_id)
+        if item and found_type == item_type:
             price_str = str(item.get("price", "0 جنية")).split()[0]
             try:
+                if price_str == 'مجانا':
+                    return 0.0
                 return float(price_str)
             except Exception:
                 return 0.0
     return 0.0
 
+# EDITED: This endpoint now uses the updated helper function
 @app.post("/payments/initiate", response_model=PaymentInitiateResponse)
 async def initiate_payment(
     body: PaymentInitiateRequest,
@@ -999,7 +1174,10 @@ async def get_chapter_lessons(chapter_id: int, edu_collection: AsyncIOMotorColle
                             # Safely extract data with default values for missing keys
                             price_str = lesson_data.get("price", "0 جنية").split()[0]
                             try:
-                                price_val = float(price_str)
+                                if price_str == 'مجانا':
+                                    price_val = 0.0
+                                else:
+                                    price_val = float(price_str)
                             except (ValueError, IndexError):
                                 price_val = 0.0
                             
@@ -1053,7 +1231,10 @@ async def get_lesson_details(lesson_id: int, edu_collection: AsyncIOMotorCollect
 
     price_str = lesson_summary.get("price", "0 جنية").split()[0]
     try:
-        price_val = float(price_str)
+        if price_str == 'مجانا':
+            price_val = 0.0
+        else:
+            price_val = float(price_str)
     except (ValueError, IndexError):
         price_val = 0.0
     
@@ -1091,7 +1272,10 @@ async def get_free_chapters(year: str, term: str, language: str, subject: str, e
         if lesson_data.get('isFree', False):
             price_str = lesson_data.get("price", "0 جنية").split()[0]
             try:
-                price_val = float(price_str)
+                if price_str == 'مجانا':
+                    price_val = 0.0
+                else:
+                    price_val = float(price_str)
             except (ValueError, IndexError):
                 price_val = 0.0
             
@@ -1105,7 +1289,7 @@ async def get_free_chapters(year: str, term: str, language: str, subject: str, e
                 image_url=lesson_data.get("image_url"),
                 price=price_val,
                 hours=lesson_data.get("hours", 0),
-                lecture=lesson_data.get("lecture", ""),
+                lecture=lecture_string,
                 course=f"{chapter_title} ({lesson_data.get('chapter_id')})" if chapter_title else ""
             ))
     return free_lessons
@@ -1126,7 +1310,10 @@ async def get_paid_chapters(year: str, term: str, language: str, subject: str, e
         if not lesson_data.get('isFree', False):
             price_str = lesson_data.get("price", "0 جنية").split()[0]
             try:
-                price_val = float(price_str)
+                if price_str == 'مجانا':
+                    price_val = 0.0
+                else:
+                    price_val = float(price_str)
             except (ValueError, IndexError):
                 price_val = 0.0
 
@@ -1140,7 +1327,7 @@ async def get_paid_chapters(year: str, term: str, language: str, subject: str, e
                 image_url=lesson_data.get("image_url"),
                 price=price_val,
                 hours=lesson_data.get("hours", 0),
-                lecture=lesson_data.get("lecture", ""),
+                lecture=lecture_string,
                 course=f"{chapter_title} ({lesson_data.get('chapter_id')})" if chapter_title else ""
             ))
     return paid_lessons
@@ -1154,6 +1341,7 @@ async def get_books(books_collection: AsyncIOMotorCollection = Depends(get_books
     # Pydantic will handle the mapping from _id to id if necessary
     return books
 
+# EDITED: This endpoint is now more robust to item_type
 @app.post("/dashboard/buy-item", response_model=ReceiptResponse)
 async def buy_item(
     purchase_data: ItemPurchaseRequest,
@@ -1165,19 +1353,28 @@ async def buy_item(
     Simulates a student buying an item. In a real app, this would
     involve a payment gateway. Here, it just creates a receipt.
     """
-    # Fetch item details from the database
-    item_details = await find_item_in_content_by_id(int(purchase_data.item_id))
+    # Fetch item details from the database based on item_type
+    item_details, item_type = await find_item_details_by_id(purchase_data.item_id)
     if not item_details:
         raise HTTPException(status_code=404, detail=f"{purchase_data.item_type} with ID {purchase_data.item_id} not found")
 
     # Create a receipt to log the "purchase"
+    price_str = item_details.get("price", "0 EGP").split()[0]
+    try:
+        if price_str == 'مجانا':
+            amount = 0.0
+        else:
+            amount = float(price_str)
+    except (ValueError, IndexError):
+        amount = 0.0
+
     new_receipt_data = {
         "student_id": str(current_student["_id"]),
         "student_code": current_student["student_code"],
         "receipt_type": "package_purchase",  # Designates a content purchase
         "item_id": purchase_data.item_id,
-        "amount": float(item_details.get("price", "0 EGP").split()[0]),
-        "description": f"Purchase of {purchase_data.item_type}: {item_details.get('title')}",
+        "amount": amount,
+        "description": f"Purchase of {item_type}: {item_details.get('title')}",
         "created_at": datetime.now(timezone.utc)
     }
 
@@ -1202,7 +1399,7 @@ async def get_my_chapters(
         "receipt_type": "package_purchase"
     })
     receipts = await receipts_cursor.to_list(length=1000)
-    purchased_chapter_ids = {int(r["item_id"]) for r in receipts}
+    purchased_item_ids = {r["item_id"] for r in receipts}
 
     edu_doc = await edu_collection.find_one({"content": {"$exists": True}})
     if not edu_doc:
@@ -1216,12 +1413,15 @@ async def get_my_chapters(
                 for subject in language.values():
                     # Check if the lessons exist in the subject dictionary
                     for lesson_id, lesson_data in subject.get("lessons", {}).items():
-                        # The database stores IDs as strings, so convert for comparison
-                        if int(lesson_data.get("chapter_id")) in purchased_chapter_ids:
+                        # The database stores IDs as strings, so check against purchased item IDs
+                        if str(lesson_data.get("chapter_id")) in purchased_item_ids:
                             # Safely extract the price and convert to float
                             price_str = lesson_data.get("price", "0 جنية").split()[0]
                             try:
-                                price_val = float(price_str)
+                                if price_str == 'مجانا':
+                                    price_val = 0.0
+                                else:
+                                    price_val = float(price_str)
                             except (ValueError, IndexError):
                                 price_val = 0.0
 
@@ -1237,7 +1437,7 @@ async def get_my_chapters(
                                 image_url=lesson_data.get("image_url"),
                                 price=price_val,
                                 hours=lesson_data.get("hours", 0),
-                                lecture=lesson_data.get("lecture", ""),
+                                lecture=lecture_string,
                                 course=f"{chapter_title} ({lesson_data.get('chapter_id')})" if chapter_title else ""
                             ))
                             
@@ -1379,7 +1579,7 @@ async def get_parent_dashboard(
         "receipt_type": "package_purchase"
     })
     receipts = await receipts_cursor.to_list(length=1000)
-    purchased_item_ids = {int(r["item_id"]) for r in receipts}
+    purchased_item_ids = {r["item_id"] for r in receipts}
 
     edu_doc = await edu_collection.find_one({"content": {"$exists": True}})
     purchased_chapters = []
@@ -1390,7 +1590,7 @@ async def get_parent_dashboard(
                 for language in term.values():
                     for subject in language.values():
                         for cid, cdata in subject.get("chapters", {}).items():
-                            if int(cid) in purchased_item_ids:
+                            if str(cid) in purchased_item_ids:
                                 purchased_chapters.append(
                                     ChapterSummaryResponse(id=int(cid), image=courseImg, variant="chapter", **cdata)
                                 )
@@ -1411,3 +1611,4 @@ def get_test_frontend():
 @app.get("/admin_try", response_class=FileResponse)
 def get_admin_test_frontend():
     return FileResponse("admin_try.html", media_type="text/html")
+
